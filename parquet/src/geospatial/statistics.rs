@@ -20,6 +20,15 @@
 //! This module provides functionality for working with geospatial statistics in Parquet files.
 //! It includes support for bounding boxes and geospatial statistics in column chunk metadata.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::{file::metadata::HeapSize, geospatial::bounding_box::BoundingBox};
 
 // ----------------------------------------------------------------------

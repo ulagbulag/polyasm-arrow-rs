@@ -15,6 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::data_type::AsBytes;
 use hashbrown::HashTable;
 
@@ -77,7 +86,9 @@ impl<S: Storage> Interner<S> {
     /// Return estimate of the memory used, in bytes
     #[allow(dead_code)] // not used in parquet_derive, so is dead there
     pub fn estimated_memory_size(&self) -> usize {
-        self.storage.estimated_memory_size() + self.dedup.allocation_size()
+        self.storage.estimated_memory_size() +
+            // estimate size of dedup hashmap as just th size of the keys
+            self.dedup.capacity() + core::mem::size_of::<S::Key>()
     }
 
     /// Returns the storage for this interner

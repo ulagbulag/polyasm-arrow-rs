@@ -19,23 +19,40 @@
 //! readers to read individual column chunks, or access record
 //! iterator.
 
-use bytes::{Buf, Bytes};
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+#[cfg(feature = "std")]
 use std::fs::File;
-use std::io::{BufReader, Seek, SeekFrom};
-use std::{io::Read, sync::Arc};
 
-use crate::bloom_filter::Sbbf;
-use crate::column::page::PageIterator;
-use crate::column::{page::PageReader, reader::ColumnReader};
-use crate::errors::{ParquetError, Result};
-use crate::file::metadata::*;
-pub use crate::file::serialized_reader::{SerializedFileReader, SerializedPageReader};
-use crate::record::reader::RowIter;
-use crate::schema::types::Type as SchemaType;
+use bytes::{Buf, Bytes};
 
-use crate::basic::Type;
-
-use crate::column::reader::ColumnReaderImpl;
+#[cfg(feature = "std")]
+pub use crate::file::serialized_reader::SerializedFileReader;
+pub use crate::file::serialized_reader::SerializedPageReader;
+#[cfg(feature = "std")]
+use crate::{
+    basic::Type,
+    bloom_filter::Sbbf,
+    column::{
+        page::{PageIterator, PageReader},
+        reader::{ColumnReader, ColumnReaderImpl},
+    },
+    io::{BufReader, Seek, SeekFrom},
+    record::reader::RowIter,
+    schema::types::Type as SchemaType,
+};
+use crate::{
+    errors::{ParquetError, Result},
+    file::metadata::*,
+    io::Read,
+};
 
 /// Length should return the total number of bytes in the input source.
 /// It's mainly used to read the metadata, which is at the end of the source.
@@ -81,12 +98,14 @@ pub trait ChunkReader: Length + Send + Sync {
     fn get_bytes(&self, start: u64, length: usize) -> Result<Bytes>;
 }
 
+#[cfg(feature = "std")]
 impl Length for File {
     fn len(&self) -> u64 {
         self.metadata().map(|m| m.len()).unwrap_or(0u64)
     }
 }
 
+#[cfg(feature = "std")]
 impl ChunkReader for File {
     type T = BufReader<File>;
 
@@ -120,7 +139,16 @@ impl Length for Bytes {
 }
 
 impl ChunkReader for Bytes {
-    type T = bytes::buf::Reader<Bytes>;
+    // `bytes`' own reader is an adapter over `std::io::Read`, so a `no_std`
+    // build reads the same slice through the cursor `crate::io` supplies.
+    type T = cfg_select! {
+        feature = "std" => {
+            bytes::buf::Reader<Bytes>
+        }
+        _ => {
+            crate::io::Cursor<Bytes>
+        }
+    };
 
     fn get_read(&self, start: u64) -> Result<Self::T> {
         let start = start as usize;
@@ -130,7 +158,10 @@ impl ChunkReader for Bytes {
                 self.len()
             ));
         }
-        Ok(self.slice(start..).reader())
+        cfg_select! {
+            feature = "std" => Ok(self.slice(start..).reader()),
+            _ => Ok(crate::io::Cursor::new(self.slice(start..))),
+        }
     }
 
     fn get_bytes(&self, start: u64, length: usize) -> Result<Bytes> {
@@ -152,6 +183,7 @@ impl ChunkReader for Bytes {
 
 /// Parquet file reader API. With this, user can get metadata information about the
 /// Parquet file, can get reader for each row group, and access record iterator.
+#[cfg(feature = "std")]
 pub trait FileReader: Send + Sync {
     /// Get metadata information about this file.
     fn metadata(&self) -> &ParquetMetaData;
@@ -173,6 +205,7 @@ pub trait FileReader: Send + Sync {
 
 /// Parquet row group reader API. With this, user can get metadata information about the
 /// row group, as well as readers for each individual column chunk.
+#[cfg(feature = "std")]
 pub trait RowGroupReader: Send + Sync {
     /// Get metadata information about this row group.
     fn metadata(&self) -> &RowGroupMetaData;
@@ -233,12 +266,14 @@ pub trait RowGroupReader: Send + Sync {
 // Iterator
 
 /// Implementation of page iterator for parquet file.
+#[cfg(feature = "std")]
 pub struct FilePageIterator {
     column_index: usize,
     row_group_indices: Box<dyn Iterator<Item = usize> + Send>,
     file_reader: Arc<dyn FileReader>,
 }
 
+#[cfg(feature = "std")]
 impl FilePageIterator {
     /// Creates a page iterator for all row groups in file.
     pub fn new(column_index: usize, file_reader: Arc<dyn FileReader>) -> Result<Self> {
@@ -275,6 +310,7 @@ impl FilePageIterator {
     }
 }
 
+#[cfg(feature = "std")]
 impl Iterator for FilePageIterator {
     type Item = Result<Box<dyn PageReader>>;
 
@@ -287,6 +323,7 @@ impl Iterator for FilePageIterator {
     }
 }
 
+#[cfg(feature = "std")]
 impl PageIterator for FilePageIterator {}
 
 #[cfg(test)]

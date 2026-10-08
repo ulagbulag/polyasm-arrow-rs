@@ -36,6 +36,17 @@
 //! Note: this does not currently support preserving the page index or bloom filters
 //!
 
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use std::fs::File;
+
 use clap::Parser;
 use parquet::bloom_filter::Sbbf;
 use parquet::column::writer::ColumnCloseResult;
@@ -44,8 +55,6 @@ use parquet::file::metadata::{ColumnChunkMetaData, PageIndexPolicy, ParquetMetaD
 use parquet::file::properties::WriterProperties;
 use parquet::file::reader::ChunkReader;
 use parquet::file::writer::SerializedFileWriter;
-use std::fs::File;
-use std::sync::Arc;
 
 #[derive(Debug, Parser)]
 #[clap(author, version)]

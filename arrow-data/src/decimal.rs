@@ -24,9 +24,13 @@
 //! [`Decimal64`]: arrow_schema::DataType::Decimal64
 //! [`Decimal128`]: arrow_schema::DataType::Decimal128
 //! [`Decimal256`]: arrow_schema::DataType::Decimal256
+use alloc::{
+    format,
+    string::{String, ToString},
+};
+
 use arrow_buffer::i256;
 use arrow_schema::ArrowError;
-
 pub use arrow_schema::{
     DECIMAL_DEFAULT_SCALE, DECIMAL32_DEFAULT_SCALE, DECIMAL32_MAX_PRECISION, DECIMAL32_MAX_SCALE,
     DECIMAL64_DEFAULT_SCALE, DECIMAL64_MAX_PRECISION, DECIMAL64_MAX_SCALE,

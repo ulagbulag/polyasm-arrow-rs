@@ -37,7 +37,12 @@
     html_favicon_url = "https://arrow.apache.org/img/arrow-logo_chevrons_black-txt_transparent-bg.svg"
 )]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
+
+// This crate has its own `alloc` module, so the standard `alloc` crate is
+// brought into scope under an alias to avoid the name collision.
+extern crate alloc as alloc_crate;
 
 pub mod alloc;
 pub mod buffer;

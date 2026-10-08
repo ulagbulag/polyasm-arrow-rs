@@ -48,11 +48,11 @@ mod private {
 ///
 /// Due to the above restrictions, this trait is sealed to prevent accidental misuse
 pub trait ArrowNativeType:
-    std::fmt::Debug + Send + Sync + Copy + PartialOrd + Default + private::Sealed + 'static
+    core::fmt::Debug + Send + Sync + Copy + PartialOrd + Default + private::Sealed + 'static
 {
     /// Returns the byte width of this native type.
     fn get_byte_width() -> usize {
-        std::mem::size_of::<Self>()
+        core::mem::size_of::<Self>()
     }
 
     /// Convert native integer type from usize
@@ -274,7 +274,7 @@ impl<T: ArrowNativeType> ToByteSlice for [T] {
     #[inline]
     fn to_byte_slice(&self) -> &[u8] {
         let raw_ptr = self.as_ptr() as *const u8;
-        unsafe { std::slice::from_raw_parts(raw_ptr, std::mem::size_of_val(self)) }
+        unsafe { core::slice::from_raw_parts(raw_ptr, core::mem::size_of_val(self)) }
     }
 }
 
@@ -282,7 +282,7 @@ impl<T: ArrowNativeType> ToByteSlice for T {
     #[inline]
     fn to_byte_slice(&self) -> &[u8] {
         let raw_ptr = self as *const T as *const u8;
-        unsafe { std::slice::from_raw_parts(raw_ptr, std::mem::size_of::<T>()) }
+        unsafe { core::slice::from_raw_parts(raw_ptr, core::mem::size_of::<T>()) }
     }
 }
 

@@ -15,16 +15,27 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use bytes::Bytes;
 use futures::future::BoxFuture;
-use std::sync::Arc;
-
-use crate::arrow::async_writer::AsyncFileWriter;
-use crate::errors::{ParquetError, Result};
 use object_store::ObjectStore;
 use object_store::buffered::BufWriter;
 use object_store::path::Path;
 use tokio::io::AsyncWriteExt;
+
+use crate::{
+    arrow::async_writer::AsyncFileWriter,
+    errors::{ParquetError, Result},
+};
 
 /// [`ParquetObjectWriter`] for writing to parquet to [`ObjectStore`]
 ///
@@ -118,14 +129,16 @@ impl From<BufWriter> for ParquetObjectWriter {
 }
 #[cfg(test)]
 mod tests {
-    use arrow_array::{ArrayRef, Int64Array, RecordBatch};
-    use object_store::memory::InMemory;
-    use std::sync::Arc;
+    use alloc::sync::Arc;
 
-    use super::*;
+    use arrow_array::{ArrayRef, Int64Array, RecordBatch};
+    use object_store::ObjectStoreExt;
+    use object_store::memory::InMemory;
+
     use crate::arrow::AsyncArrowWriter;
     use crate::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-    use object_store::ObjectStoreExt;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_async_writer() {

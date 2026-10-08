@@ -15,7 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use core::any::Any;
+
+use arrow_buffer::{
+    ArrowNativeType, BooleanBuffer, BooleanBufferBuilder, ScalarBuffer, bit_util::set_bit,
+    buffer::NullBuffer,
+};
+use arrow_data::ArrayData;
+use arrow_schema::{ArrowError, DataType};
+
+#[cfg(feature = "std")]
 use crate::builder::{PrimitiveDictionaryBuilder, StringDictionaryBuilder};
+#[cfg(feature = "std")]
 use crate::cast::AsArray;
 use crate::iterator::ArrayIter;
 use crate::types::*;
@@ -23,13 +35,6 @@ use crate::{
     Array, ArrayAccessor, ArrayRef, ArrowNativeTypeOp, PrimitiveArray, Scalar, StringArray,
     make_array,
 };
-use arrow_buffer::bit_util::set_bit;
-use arrow_buffer::buffer::NullBuffer;
-use arrow_buffer::{ArrowNativeType, BooleanBuffer, BooleanBufferBuilder, ScalarBuffer};
-use arrow_data::ArrayData;
-use arrow_schema::{ArrowError, DataType};
-use std::any::Any;
-use std::sync::Arc;
 
 /// A [`DictionaryArray`] indexed by `i8`
 ///
@@ -489,6 +494,7 @@ impl<K: ArrowDictionaryKeyType> DictionaryArray<K> {
     /// Returns `PrimitiveDictionaryBuilder` of this dictionary array for mutating
     /// its keys and values if the underlying data buffer is not shared by others.
     #[allow(clippy::result_large_err)]
+    #[cfg(feature = "std")]
     pub fn into_primitive_dict_builder<V>(self) -> Result<PrimitiveDictionaryBuilder<K, V>, Self>
     where
         V: ArrowPrimitiveType,
@@ -546,6 +552,7 @@ impl<K: ArrowDictionaryKeyType> DictionaryArray<K> {
     /// assert_eq!(typed.value(2), 21);
     /// ```
     #[allow(clippy::result_large_err)]
+    #[cfg(feature = "std")]
     pub fn unary_mut<F, V>(self, op: F) -> Result<DictionaryArray<K>, DictionaryArray<K>>
     where
         V: ArrowPrimitiveType,
@@ -656,6 +663,7 @@ impl<T: ArrowDictionaryKeyType> From<DictionaryArray<T>> for ArrayData {
 ///     format!("{:?}", array)
 /// );
 /// ```
+#[cfg(feature = "std")]
 impl<'a, T: ArrowDictionaryKeyType> FromIterator<Option<&'a str>> for DictionaryArray<T> {
     fn from_iter<I: IntoIterator<Item = Option<&'a str>>>(iter: I) -> Self {
         let it = iter.into_iter();
@@ -680,6 +688,7 @@ impl<'a, T: ArrowDictionaryKeyType> FromIterator<Option<&'a str>> for Dictionary
 ///     format!("{:?}", array)
 /// );
 /// ```
+#[cfg(feature = "std")]
 impl<'a, T: ArrowDictionaryKeyType> FromIterator<&'a str> for DictionaryArray<T> {
     fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> Self {
         let it = iter.into_iter();
@@ -788,7 +797,7 @@ unsafe impl<T: ArrowDictionaryKeyType> Array for DictionaryArray<T> {
     }
 
     fn get_array_memory_size(&self) -> usize {
-        std::mem::size_of::<Self>()
+        core::mem::size_of::<Self>()
             + self.keys.get_buffer_memory_size()
             + self.values.get_array_memory_size()
     }
@@ -800,8 +809,8 @@ unsafe impl<T: ArrowDictionaryKeyType> Array for DictionaryArray<T> {
     }
 }
 
-impl<T: ArrowDictionaryKeyType> std::fmt::Debug for DictionaryArray<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<T: ArrowDictionaryKeyType> core::fmt::Debug for DictionaryArray<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         writeln!(
             f,
             "DictionaryArray {{keys: {:?} values: {:?}}}",
@@ -843,8 +852,8 @@ impl<K: ArrowDictionaryKeyType, V> Clone for TypedDictionaryArray<'_, K, V> {
 
 impl<K: ArrowDictionaryKeyType, V> Copy for TypedDictionaryArray<'_, K, V> {}
 
-impl<K: ArrowDictionaryKeyType, V> std::fmt::Debug for TypedDictionaryArray<'_, K, V> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<K: ArrowDictionaryKeyType, V> core::fmt::Debug for TypedDictionaryArray<'_, K, V> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         writeln!(f, "TypedDictionaryArray({:?})", self.dictionary)
     }
 }

@@ -15,10 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::column::page::CompressedPage;
 use crate::errors::Result;
 use crate::file::metadata::thrift::PageHeader;
-use std::io::Write;
+#[cfg(feature = "std")]
+use crate::io::Write;
 
 #[derive(Debug)]
 /// Dummy PageEncryptor struct that can never be instantiated,
@@ -34,6 +44,7 @@ impl PageEncryptor {
         unreachable!("The encryption feature is disabled")
     }
 
+    #[cfg(feature = "std")]
     pub fn encrypt_page_header<W: Write>(
         &mut self,
         _page_header: &PageHeader,

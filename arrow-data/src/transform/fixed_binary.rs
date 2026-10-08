@@ -15,9 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use super::{_MutableArrayData, Extend};
-use crate::ArrayData;
+use alloc::boxed::Box;
+
 use arrow_schema::DataType;
+
+use crate::ArrayData;
+
+use super::{_MutableArrayData, Extend};
 
 pub(super) fn build_extend(array: &ArrayData) -> Extend<'_> {
     let size = match array.data_type() {

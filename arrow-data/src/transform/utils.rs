@@ -33,7 +33,7 @@ pub(super) fn extend_offsets<T: ArrowNativeType + Integer + CheckedAdd>(
     mut last_offset: T,
     offsets: &[T],
 ) {
-    buffer.reserve(std::mem::size_of_val(offsets));
+    buffer.reserve(core::mem::size_of_val(offsets));
     offsets.windows(2).for_each(|offsets| {
         // compute the new offset
         let length = offsets[1] - offsets[0];

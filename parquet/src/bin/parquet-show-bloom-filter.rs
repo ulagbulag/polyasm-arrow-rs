@@ -33,6 +33,15 @@
 //! cargo run --features=cli --bin parquet-show-bloom-filter -- --file-name XYZ.parquet --column id --values a
 //! ```
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use clap::Parser;
 use parquet::basic::Type;
 use parquet::bloom_filter::Sbbf;

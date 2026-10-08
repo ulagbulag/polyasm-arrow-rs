@@ -97,6 +97,15 @@
 //!     println!("{}", row.unwrap());
 //! }
 //! ```
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 #[cfg(feature = "encryption")]
 pub mod column_crypto_metadata;
 pub mod metadata;
@@ -105,6 +114,7 @@ pub mod properties;
 pub mod reader;
 pub mod serialized_reader;
 pub mod statistics;
+#[cfg(feature = "std")]
 pub mod writer;
 
 /// The length of the parquet footer in bytes

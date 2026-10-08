@@ -17,6 +17,19 @@
 
 //! [`DataRequest`] tracks and holds data needed to construct InMemoryRowGroups
 
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::ops::Range;
+
+use bytes::Bytes;
+
 use crate::arrow::ProjectionMask;
 use crate::arrow::arrow_reader::RowSelection;
 use crate::arrow::in_memory_row_group::{ColumnChunkData, FetchRanges, InMemoryRowGroup};
@@ -25,9 +38,6 @@ use crate::file::metadata::ParquetMetaData;
 use crate::file::page_index::offset_index::OffsetIndexMetaData;
 use crate::file::reader::ChunkReader;
 use crate::util::push_buffers::PushBuffers;
-use bytes::Bytes;
-use std::ops::Range;
-use std::sync::Arc;
 
 /// Contains in-progress state to construct InMemoryRowGroups
 ///

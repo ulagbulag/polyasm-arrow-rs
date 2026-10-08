@@ -106,6 +106,15 @@
 //! # Ok::<(), parquet::errors::ParquetError>(())
 //! ```
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 pub(crate) mod ciphers;
 pub mod decrypt;
 pub mod encrypt;

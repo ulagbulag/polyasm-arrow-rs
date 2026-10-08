@@ -19,7 +19,7 @@
 /// based on if debug_assertions enabled
 macro_rules! derive_arith {
     ($ty:ty, $t:ident, $t_assign:ident, $op:ident, $op_assign:ident, $wrapping:ident, $checked:ident) => {
-        impl std::ops::$t for $ty {
+        impl core::ops::$t for $ty {
             type Output = $ty;
 
             #[cfg(debug_assertions)]
@@ -34,7 +34,7 @@ macro_rules! derive_arith {
             }
         }
 
-        impl std::ops::$t_assign for $ty {
+        impl core::ops::$t_assign for $ty {
             #[cfg(debug_assertions)]
             fn $op_assign(&mut self, rhs: Self) {
                 *self = self
@@ -48,7 +48,7 @@ macro_rules! derive_arith {
             }
         }
 
-        impl<'a> std::ops::$t<$ty> for &'a $ty {
+        impl<'a> core::ops::$t<$ty> for &'a $ty {
             type Output = $ty;
 
             fn $op(self, rhs: $ty) -> Self::Output {
@@ -56,7 +56,7 @@ macro_rules! derive_arith {
             }
         }
 
-        impl<'a> std::ops::$t<&'a $ty> for $ty {
+        impl<'a> core::ops::$t<&'a $ty> for $ty {
             type Output = $ty;
 
             fn $op(self, rhs: &'a $ty) -> Self::Output {
@@ -64,7 +64,7 @@ macro_rules! derive_arith {
             }
         }
 
-        impl<'a, 'b> std::ops::$t<&'b $ty> for &'a $ty {
+        impl<'a, 'b> core::ops::$t<&'b $ty> for &'a $ty {
             type Output = $ty;
 
             fn $op(self, rhs: &'b $ty) -> Self::Output {

@@ -15,8 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use super::{_MutableArrayData, Extend};
+use alloc::boxed::Box;
+
 use crate::ArrayData;
+
+use super::{_MutableArrayData, Extend};
 
 pub(super) fn build_extend(_: &ArrayData) -> Extend<'_> {
     Box::new(

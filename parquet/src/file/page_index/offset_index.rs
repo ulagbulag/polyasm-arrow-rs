@@ -19,15 +19,26 @@
 //!
 //! [`OffsetIndex`]: https://github.com/apache/parquet-format/blob/master/PageIndex.md
 
-use std::io::Write;
-
-use crate::parquet_thrift::{
-    ElementType, FieldType, ReadThrift, ThriftCompactInputProtocol, ThriftCompactOutputProtocol,
-    WriteThrift, WriteThriftField, read_thrift_vec,
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
 };
+
 use crate::{
     errors::{ParquetError, Result},
+    parquet_thrift::{
+        ElementType, FieldType, ReadThrift, ThriftCompactInputProtocol, read_thrift_vec,
+    },
     thrift_struct,
+};
+#[cfg(feature = "std")]
+use crate::{
+    io::Write,
+    parquet_thrift::{ThriftCompactOutputProtocol, WriteThrift, WriteThriftField},
 };
 
 thrift_struct!(

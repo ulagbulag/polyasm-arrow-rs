@@ -17,6 +17,15 @@
 
 //! Contains Parquet Page definitions and page reader interface.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use bytes::Bytes;
 
 use crate::basic::{Encoding, PageType};
@@ -350,7 +359,7 @@ impl TryFrom<&crate::file::metadata::thrift::PageHeader> for PageMetadata {
 
     fn try_from(
         value: &crate::file::metadata::thrift::PageHeader,
-    ) -> std::result::Result<Self, Self::Error> {
+    ) -> core::result::Result<Self, Self::Error> {
         match value.r#type {
             PageType::DATA_PAGE => {
                 let header = value.data_page_header.as_ref().unwrap();

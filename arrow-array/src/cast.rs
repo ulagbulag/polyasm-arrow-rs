@@ -1116,10 +1116,12 @@ impl AsArray for ArrayRef {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use alloc::sync::Arc;
+
     use arrow_buffer::i256;
     use arrow_schema::DataType;
-    use std::sync::Arc;
+
+    use super::*;
 
     #[test]
     fn test_as_primitive_array_ref() {

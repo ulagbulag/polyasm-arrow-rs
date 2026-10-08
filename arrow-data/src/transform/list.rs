@@ -15,14 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use alloc::boxed::Box;
+
+use arrow_buffer::ArrowNativeType;
+use num_integer::Integer;
+use num_traits::CheckedAdd;
+
+use crate::ArrayData;
+
 use super::{
     _MutableArrayData, Extend,
     utils::{extend_offsets, get_last_offset},
 };
-use crate::ArrayData;
-use arrow_buffer::ArrowNativeType;
-use num_integer::Integer;
-use num_traits::CheckedAdd;
 
 pub(super) fn build_extend<T: ArrowNativeType + Integer + CheckedAdd>(
     array: &ArrayData,

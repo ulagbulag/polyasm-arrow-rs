@@ -17,16 +17,27 @@
 
 //! Configuration and utilities for decryption of files using Parquet Modular Encryption
 
-use crate::encryption::ciphers::{BlockDecryptor, RingGcmBlockDecryptor, TAG_LEN};
-use crate::encryption::modules::{ModuleType, create_footer_aad, create_module_aad};
-use crate::errors::{ParquetError, Result};
-use crate::file::column_crypto_metadata::ColumnCryptoMetaData;
-use crate::file::metadata::HeapSize;
-use std::borrow::Cow;
+use alloc::{borrow::Cow, sync::Arc};
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::fmt::Formatter;
 use std::collections::HashMap;
-use std::fmt::Formatter;
-use std::io::Read;
-use std::sync::Arc;
+
+use crate::{
+    encryption::{
+        ciphers::{BlockDecryptor, RingGcmBlockDecryptor, TAG_LEN},
+        modules::{ModuleType, create_footer_aad, create_module_aad},
+    },
+    errors::{ParquetError, Result},
+    file::{column_crypto_metadata::ColumnCryptoMetaData, metadata::HeapSize},
+    io::Read,
+};
 
 /// Trait for retrieving an encryption key using the key's metadata
 ///
@@ -434,8 +445,8 @@ impl FileDecryptionProperties {
     }
 }
 
-impl std::fmt::Debug for FileDecryptionProperties {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for FileDecryptionProperties {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "FileDecryptionProperties {{ }}")
     }
 }

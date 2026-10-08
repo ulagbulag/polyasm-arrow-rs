@@ -9,23 +9,35 @@
 // Fix unexpected `cfg` condition name: `rustfmt` https://github.com/apache/arrow-rs/issues/5725
 //#![cfg_attr(rustfmt, rustfmt_skip)]
 
-use std::cell::RefCell;
+use alloc::rc::Rc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::{
+    cell::RefCell,
+    convert::{From, TryFrom},
+    default::Default,
+    error::Error,
+    fmt,
+    fmt::{Display, Formatter},
+};
 use std::collections::{BTreeMap, BTreeSet};
-use std::convert::{From, TryFrom};
-use std::default::Default;
-use std::error::Error;
-use std::fmt;
-use std::fmt::{Display, Formatter};
-use std::rc::Rc;
 
-use thrift::OrderedFloat;
-use thrift::{ApplicationError, ApplicationErrorKind, ProtocolError, ProtocolErrorKind, TThriftClient};
-use thrift::protocol::{TFieldIdentifier, TListIdentifier, TMapIdentifier, TMessageIdentifier, TMessageType, TInputProtocol, TOutputProtocol, TSerializable, TSetIdentifier, TStructIdentifier, TType};
-use thrift::protocol::field_id;
-use thrift::protocol::verify_expected_message_type;
-use thrift::protocol::verify_expected_sequence_number;
-use thrift::protocol::verify_expected_service_call;
-use thrift::protocol::verify_required_field_exists;
+use thrift::{
+    ApplicationError, ApplicationErrorKind, OrderedFloat, ProtocolError, ProtocolErrorKind,
+    TThriftClient,
+    protocol::{
+        TFieldIdentifier, TInputProtocol, TListIdentifier, TMapIdentifier, TMessageIdentifier,
+        TMessageType, TOutputProtocol, TSerializable, TSetIdentifier, TStructIdentifier, TType,
+        field_id, verify_expected_message_type, verify_expected_sequence_number,
+        verify_expected_service_call, verify_required_field_exists,
+    },
+};
 
 /// Types supported by Parquet.  These types are intended to be used in combination
 /// with the encodings to control the on disk storage format.

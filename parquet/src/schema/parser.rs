@@ -42,7 +42,15 @@
 //! println!("{:?}", schema);
 //! ```
 
-use std::sync::Arc;
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 
 use crate::basic::{ConvertedType, LogicalType, Repetition, TimeUnit, Type as PhysicalType};
 use crate::errors::{ParquetError, Result};

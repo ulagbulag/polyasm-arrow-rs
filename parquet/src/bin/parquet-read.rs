@@ -36,11 +36,21 @@
 //! Note that `parquet-read` reads full file schema, no projection or filtering is
 //! applied.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use std::{fs::File, path::Path};
+
 use clap::Parser;
 use parquet::file::reader::{FileReader, SerializedFileReader};
 use parquet::record::Row;
-use std::io::{self, Read};
-use std::{fs::File, path::Path};
+
+use crate::io::{self, Read};
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about("Binary file to read data from a Parquet file"), long_about = None)]

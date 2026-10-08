@@ -15,15 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::array::Array;
-use crate::builder::ArrayBuilder;
-use crate::{ArrayRef, FixedSizeBinaryArray};
+use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
+use core::any::Any;
+
 use arrow_buffer::Buffer;
 use arrow_buffer::NullBufferBuilder;
 use arrow_data::ArrayData;
 use arrow_schema::{ArrowError, DataType};
-use std::any::Any;
-use std::sync::Arc;
+
+use crate::{ArrayRef, FixedSizeBinaryArray, array::Array, builder::ArrayBuilder};
 
 /// Builder for [`FixedSizeBinaryArray`]
 /// ```
@@ -90,7 +90,7 @@ impl FixedSizeBinaryBuilder {
     #[inline]
     pub fn append_null(&mut self) {
         self.values_builder
-            .extend(std::iter::repeat_n(0u8, self.value_length as usize));
+            .extend(core::iter::repeat_n(0u8, self.value_length as usize));
         self.null_buffer_builder.append_null();
     }
 
@@ -98,7 +98,7 @@ impl FixedSizeBinaryBuilder {
     #[inline]
     pub fn append_nulls(&mut self, n: usize) {
         self.values_builder
-            .extend(std::iter::repeat_n(0u8, self.value_length as usize * n));
+            .extend(core::iter::repeat_n(0u8, self.value_length as usize * n));
         self.null_buffer_builder.append_n_nulls(n);
     }
 
@@ -128,7 +128,7 @@ impl FixedSizeBinaryBuilder {
     pub fn finish(&mut self) -> FixedSizeBinaryArray {
         let array_length = self.len();
         let array_data_builder = ArrayData::builder(DataType::FixedSizeBinary(self.value_length))
-            .add_buffer(std::mem::take(&mut self.values_builder).into())
+            .add_buffer(core::mem::take(&mut self.values_builder).into())
             .nulls(self.null_buffer_builder.finish())
             .len(array_length);
         let array_data = unsafe { array_data_builder.build_unchecked() };

@@ -15,17 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use alloc::sync::Arc;
+use core::any::Any;
+use std::collections::HashMap;
+
+use arrow_buffer::{ArrowNativeType, ToByteSlice};
+use arrow_schema::{ArrowError, DataType};
+use num_traits::NumCast;
+
 use crate::builder::{ArrayBuilder, PrimitiveBuilder};
 use crate::types::ArrowDictionaryKeyType;
 use crate::{
     Array, ArrayRef, ArrowPrimitiveType, DictionaryArray, PrimitiveArray, TypedDictionaryArray,
 };
-use arrow_buffer::{ArrowNativeType, ToByteSlice};
-use arrow_schema::{ArrowError, DataType};
-use num_traits::NumCast;
-use std::any::Any;
-use std::collections::HashMap;
-use std::sync::Arc;
 
 /// Wraps a type implementing `ToByteSlice` implementing `Hash` and `Eq` for it
 ///
@@ -33,8 +35,8 @@ use std::sync::Arc;
 #[derive(Debug)]
 struct Value<T>(T);
 
-impl<T: ToByteSlice> std::hash::Hash for Value<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl<T: ToByteSlice> core::hash::Hash for Value<T> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.0.to_byte_slice().hash(state)
     }
 }
@@ -267,10 +269,6 @@ where
     /// Builds the array without resetting the builder.
     fn finish_cloned(&self) -> ArrayRef {
         Arc::new(self.finish_cloned())
-    }
-
-    fn finish_preserve_values(&mut self) -> ArrayRef {
-        Arc::new(self.finish_preserve_values())
     }
 }
 

@@ -15,9 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use core::ops::Range;
+
 use crate::bit_util::apply_bitwise_binary_op;
 use crate::{BooleanBuffer, Buffer, MutableBuffer, NullBuffer, bit_util};
-use std::ops::Range;
 
 /// Builder for [`BooleanBuffer`]
 ///
@@ -269,8 +270,8 @@ impl BooleanBufferBuilder {
     /// Use [`Self::build`] when you don't need to reuse this builder.
     #[inline]
     pub fn finish(&mut self) -> BooleanBuffer {
-        let buf = std::mem::replace(&mut self.buffer, MutableBuffer::new(0));
-        let len = std::mem::replace(&mut self.len, 0);
+        let buf = core::mem::replace(&mut self.buffer, MutableBuffer::new(0));
+        let len = core::mem::replace(&mut self.len, 0);
         BooleanBuffer::new(buf.into(), 0, len)
     }
 
@@ -472,7 +473,7 @@ mod tests {
 
         let src_len = 32;
         let (src, compacted_src) = {
-            let src: Vec<_> = std::iter::from_fn(|| Some(rng.next_u32() & 1 == 0))
+            let src: Vec<_> = core::iter::from_fn(|| Some(rng.next_u32() & 1 == 0))
                 .take(src_len)
                 .collect();
 

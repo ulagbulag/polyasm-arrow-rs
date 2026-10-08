@@ -16,6 +16,15 @@
 // under the License.
 
 //! [`check_valid_utf8`] validation function
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::errors::{ParquetError, Result};
 
 /// Check that `val` is a valid UTF-8 sequence.
@@ -50,7 +59,7 @@ pub fn check_valid_utf8(val: &[u8]) -> Result<()> {
         }
     }
     #[cfg(not(feature = "simdutf8"))]
-    match std::str::from_utf8(val) {
+    match core::str::from_utf8(val) {
         Ok(_) => Ok(()),
         Err(e) => Err(general_err!("encountered non UTF-8 data: {}", e)),
     }

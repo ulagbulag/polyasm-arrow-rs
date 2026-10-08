@@ -15,20 +15,31 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::basic::Encoding;
-use crate::column::page::Page;
+use alloc::collections::VecDeque;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use bytes::Bytes;
 use rand::{
     Rng,
     distr::{Distribution, StandardUniform, uniform::SampleUniform},
     rng,
 };
-use std::collections::VecDeque;
 
-use crate::data_type::*;
-use crate::encodings::encoding::{DictEncoder, Encoder};
-use crate::schema::types::ColumnDescPtr;
-use crate::util::{DataPageBuilder, DataPageBuilderImpl};
+use crate::{
+    basic::Encoding,
+    column::page::Page,
+    data_type::*,
+    encodings::encoding::{DictEncoder, Encoder},
+    schema::types::ColumnDescPtr,
+    util::{DataPageBuilder, DataPageBuilderImpl},
+};
 
 /// Random generator of data type `T` values and sequences.
 pub trait RandGen<T: DataType> {

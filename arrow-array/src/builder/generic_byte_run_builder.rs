@@ -15,17 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::types::bytes::ByteArrayNativeType;
-use std::{any::Any, sync::Arc};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use core::any::Any;
 
+use arrow_buffer::ArrowNativeType;
+
+use crate::types::bytes::ByteArrayNativeType;
 use crate::{
     ArrayRef, ArrowPrimitiveType, RunArray,
     types::{BinaryType, ByteArrayType, LargeBinaryType, LargeUtf8Type, RunEndIndexType, Utf8Type},
 };
 
 use super::{ArrayBuilder, GenericByteBuilder, PrimitiveBuilder};
-
-use arrow_buffer::ArrowNativeType;
 
 /// Builder for [`RunArray`] of [`GenericByteArray`](crate::array::GenericByteArray)
 ///

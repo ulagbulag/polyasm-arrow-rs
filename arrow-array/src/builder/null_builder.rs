@@ -15,12 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::builder::ArrayBuilder;
-use crate::{ArrayRef, NullArray};
+use alloc::{boxed::Box, sync::Arc};
+use core::any::Any;
+
 use arrow_data::ArrayData;
 use arrow_schema::DataType;
-use std::any::Any;
-use std::sync::Arc;
+
+use crate::{ArrayRef, NullArray, builder::ArrayBuilder};
 
 /// Builder for [`NullArray`]
 ///

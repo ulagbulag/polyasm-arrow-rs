@@ -226,8 +226,12 @@
     html_favicon_url = "https://arrow.apache.org/img/arrow-logo_chevrons_black-txt_transparent-bg.svg"
 )]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![warn(missing_docs)]
+
+#[macro_use]
+extern crate alloc;
 
 pub mod array;
 pub use array::*;

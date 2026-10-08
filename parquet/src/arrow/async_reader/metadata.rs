@@ -15,11 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::arrow::async_reader::AsyncFileReader;
-use crate::errors::Result;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::ops::Range;
+
 use bytes::Bytes;
 use futures::future::BoxFuture;
-use std::ops::Range;
+
+use crate::{arrow::async_reader::AsyncFileReader, errors::Result};
 
 /// A data source that can be used with [`ParquetMetaDataReader`] to load [`ParquetMetaData`]
 ///

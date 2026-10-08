@@ -83,7 +83,7 @@ pub const ALIGNMENT: usize = 1 << 6;
 // Operating Systems cache size determines this.
 // Currently no way to determine this without runtime inference.
 /// Cache and allocation multiple alignment size
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_abi = "polyasm", target_arch = "wasm32"))]
 pub const ALIGNMENT: usize = 1 << 6;
 
 // Same as v6 and v7.

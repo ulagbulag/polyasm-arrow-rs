@@ -17,33 +17,46 @@
 
 //! [`SerializedFileWriter`]: Low level Parquet writer API
 
-use crate::bloom_filter::Sbbf;
-use crate::file::metadata::thrift::PageHeader;
-use crate::file::page_index::column_index::ColumnIndexMetaData;
-use crate::file::page_index::offset_index::OffsetIndexMetaData;
-use crate::parquet_thrift::{ThriftCompactOutputProtocol, WriteThrift};
-use std::fmt::Debug;
-use std::io::{BufWriter, IoSlice, Read};
-use std::{io::Write, sync::Arc};
-
-use crate::column::page_encryption::PageEncryptor;
-use crate::column::writer::{ColumnCloseResult, ColumnWriterImpl, get_typed_column_writer_mut};
-use crate::column::{
-    page::{CompressedPage, PageWriteSpec, PageWriter},
-    writer::{ColumnWriter, get_column_writer},
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
 };
-use crate::data_type::DataType;
+use core::fmt::Debug;
+
 #[cfg(feature = "encryption")]
 use crate::encryption::encrypt::{
     FileEncryptionProperties, FileEncryptor, get_column_crypto_metadata,
 };
-use crate::errors::{ParquetError, Result};
 #[cfg(feature = "encryption")]
 use crate::file::PARQUET_MAGIC_ENCR_FOOTER;
-use crate::file::properties::{BloomFilterPosition, WriterPropertiesPtr};
-use crate::file::reader::ChunkReader;
-use crate::file::{PARQUET_MAGIC, metadata::*};
-use crate::schema::types::{ColumnDescPtr, SchemaDescPtr, SchemaDescriptor, TypePtr};
+use crate::{
+    bloom_filter::Sbbf,
+    column::{
+        page::{CompressedPage, PageWriteSpec, PageWriter},
+        page_encryption::PageEncryptor,
+        writer::{
+            ColumnCloseResult, ColumnWriter, ColumnWriterImpl, get_column_writer,
+            get_typed_column_writer_mut,
+        },
+    },
+    data_type::DataType,
+    errors::{ParquetError, Result},
+    file::{
+        PARQUET_MAGIC,
+        metadata::{thrift::PageHeader, *},
+        page_index::{column_index::ColumnIndexMetaData, offset_index::OffsetIndexMetaData},
+        properties::{BloomFilterPosition, WriterPropertiesPtr},
+        reader::ChunkReader,
+    },
+    io::{BufWriter, IoSlice, Read, Write},
+    parquet_thrift::{ThriftCompactOutputProtocol, WriteThrift},
+    schema::types::{ColumnDescPtr, SchemaDescPtr, SchemaDescriptor, TypePtr},
+};
 
 /// A wrapper around a [`Write`] that keeps track of the number
 /// of bytes that have been written. The given [`Write`] is wrapped
@@ -90,26 +103,26 @@ impl<W: Write> TrackedWrite<W> {
 }
 
 impl<W: Write> Write for TrackedWrite<W> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> crate::io::Result<usize> {
         let bytes = self.inner.write(buf)?;
         self.bytes_written += bytes;
         Ok(bytes)
     }
 
-    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> std::io::Result<usize> {
+    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> crate::io::Result<usize> {
         let bytes = self.inner.write_vectored(bufs)?;
         self.bytes_written += bytes;
         Ok(bytes)
     }
 
-    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+    fn write_all(&mut self, buf: &[u8]) -> crate::io::Result<()> {
         self.inner.write_all(buf)?;
         self.bytes_written += buf.len();
 
         Ok(())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> crate::io::Result<()> {
         self.inner.flush()
     }
 }
@@ -170,7 +183,7 @@ pub struct SerializedFileWriter<W: Write> {
 }
 
 impl<W: Write> Debug for SerializedFileWriter<W> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         // implement Debug so this can be used with #[derive(Debug)]
         // in client code rather than actually listing all the fields
         f.debug_struct("SerializedFileWriter")
@@ -341,9 +354,9 @@ impl<W: Write + Send> SerializedFileWriter<W> {
         };
 
         // take ownership of metadata
-        let row_groups = std::mem::take(&mut self.row_groups);
-        let column_indexes = std::mem::take(&mut self.column_indexes);
-        let offset_indexes = std::mem::take(&mut self.offset_indexes);
+        let row_groups = core::mem::take(&mut self.row_groups);
+        let column_indexes = core::mem::take(&mut self.column_indexes);
+        let offset_indexes = core::mem::take(&mut self.offset_indexes);
 
         let mut encoder = ThriftMetadataWriter::new(
             &mut self.buf,
@@ -416,12 +429,12 @@ impl<W: Write + Send> SerializedFileWriter<W> {
     ///
     /// It's safe to use this method to write data to the underlying writer,
     /// because it will ensure that the buffering and byte‐counting layers are used.
-    pub fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+    pub fn write_all(&mut self, buf: &[u8]) -> crate::io::Result<()> {
         self.buf.write_all(buf)
     }
 
     /// Flushes underlying writer
-    pub fn flush(&mut self) -> std::io::Result<()> {
+    pub fn flush(&mut self) -> crate::io::Result<()> {
         self.buf.flush()
     }
 
@@ -706,7 +719,7 @@ impl<'a, W: Write + Send> SerializedRowGroupWriter<'a, W> {
 
         let write_offset = self.buf.bytes_written();
         let mut read = reader.get_read(src_offset as _)?.take(src_length as _);
-        let write_length = std::io::copy(&mut read, &mut self.buf)?;
+        let write_length = crate::io::copy(&mut read, &mut self.buf)?;
 
         if src_length as u64 != write_length {
             return Err(general_err!(
@@ -758,7 +771,7 @@ impl<'a, W: Write + Send> SerializedRowGroupWriter<'a, W> {
         if self.row_group_metadata.is_none() {
             self.assert_previous_writer_closed()?;
 
-            let column_chunks = std::mem::take(&mut self.column_chunks);
+            let column_chunks = core::mem::take(&mut self.column_chunks);
             let row_group_metadata = RowGroupMetaData::builder(self.descr.clone())
                 .set_column_metadata(column_chunks)
                 .set_total_byte_size(self.total_uncompressed_bytes)

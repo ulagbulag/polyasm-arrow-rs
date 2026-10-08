@@ -15,10 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::types::{ByteArrayType, GenericBinaryType};
-use crate::{Array, GenericByteArray, GenericListArray, GenericStringArray, OffsetSizeTrait};
+use alloc::vec::Vec;
+
 use arrow_data::ArrayData;
 use arrow_schema::DataType;
+
+use crate::{
+    Array, GenericByteArray, GenericListArray, GenericStringArray, OffsetSizeTrait,
+    types::{ByteArrayType, GenericBinaryType},
+};
 
 /// A [`GenericByteArray`] for storing `[u8]`
 pub type GenericBinaryArray<OffsetSize> = GenericByteArray<GenericBinaryType<OffsetSize>>;
@@ -211,11 +216,14 @@ pub type LargeBinaryArray = GenericBinaryArray<i64>;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{ListArray, StringArray};
+    use alloc::sync::Arc;
+
     use arrow_buffer::Buffer;
     use arrow_schema::Field;
-    use std::sync::Arc;
+
+    use crate::{ListArray, StringArray};
+
+    use super::*;
 
     #[test]
     fn test_binary_array() {

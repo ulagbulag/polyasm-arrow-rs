@@ -15,11 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::ArrayData;
-use crate::transform::_MutableArrayData;
+use alloc::boxed::Box;
+
 use arrow_buffer::ArrowNativeType;
 use num_integer::Integer;
 use num_traits::CheckedAdd;
+
+use crate::{ArrayData, transform::_MutableArrayData};
 
 pub(super) fn build_extend<T: ArrowNativeType + Integer + CheckedAdd>(
     array: &ArrayData,

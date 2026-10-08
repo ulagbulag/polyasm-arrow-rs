@@ -15,12 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::builder::ArrayBuilder;
-use crate::{ArrayRef, GenericListViewArray, OffsetSizeTrait};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use core::any::Any;
+
 use arrow_buffer::{Buffer, NullBufferBuilder, ScalarBuffer};
 use arrow_schema::{Field, FieldRef};
-use std::any::Any;
-use std::sync::Arc;
+
+use crate::{ArrayRef, GenericListViewArray, OffsetSizeTrait, builder::ArrayBuilder};
 
 /// Builder for [`GenericListViewArray`]
 #[derive(Debug)]
@@ -70,10 +71,6 @@ impl<OffsetSize: OffsetSizeTrait, T: ArrayBuilder> ArrayBuilder
     /// Builds the array without resetting the builder.
     fn finish_cloned(&self) -> ArrayRef {
         Arc::new(self.finish_cloned())
-    }
-
-    fn finish_preserve_values(&mut self) -> ArrayRef {
-        Arc::new(self.finish_preserve_values())
     }
 }
 
@@ -154,7 +151,7 @@ where
         T: Extend<Option<V>>,
         I: IntoIterator<Item = Option<V>>,
     {
-        self.extend(std::iter::once(Some(i)))
+        self.extend(core::iter::once(Some(i)))
     }
 
     /// Append a null to this [`GenericListViewBuilder`]
@@ -186,12 +183,12 @@ where
     pub fn finish(&mut self) -> GenericListViewArray<OffsetSize> {
         let values = self.values_builder.finish();
         let nulls = self.null_buffer_builder.finish();
-        let offsets = Buffer::from_vec(std::mem::take(&mut self.offsets_builder));
+        let offsets = Buffer::from_vec(core::mem::take(&mut self.offsets_builder));
         self.current_offset = OffsetSize::zero();
 
         // Safety: Safe by construction
         let offsets = ScalarBuffer::from(offsets);
-        let sizes = Buffer::from_vec(std::mem::take(&mut self.sizes_builder));
+        let sizes = Buffer::from_vec(core::mem::take(&mut self.sizes_builder));
         let sizes = ScalarBuffer::from(sizes);
         let field = match &self.field {
             Some(f) => f.clone(),
@@ -217,23 +214,6 @@ where
             None => Arc::new(Field::new("item", values.data_type().clone(), true)),
         };
 
-        GenericListViewArray::new(field, offsets, sizes, values, nulls)
-    }
-
-    fn finish_preserve_values(&mut self) -> GenericListViewArray<OffsetSize> {
-        let values = self.values_builder.finish_preserve_values();
-        let nulls = self.null_buffer_builder.finish();
-        let offsets = Buffer::from_vec(std::mem::take(&mut self.offsets_builder));
-        self.current_offset = OffsetSize::zero();
-
-        // Safety: Safe by construction
-        let offsets = ScalarBuffer::from(offsets);
-        let sizes = Buffer::from_vec(std::mem::take(&mut self.sizes_builder));
-        let sizes = ScalarBuffer::from(sizes);
-        let field = match &self.field {
-            Some(f) => f.clone(),
-            None => Arc::new(Field::new("item", values.data_type().clone(), true)),
-        };
         GenericListViewArray::new(field, offsets, sizes, values, nulls)
     }
 
@@ -265,12 +245,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::builder::{Int32Builder, ListViewBuilder, make_builder, tests::PreserveValuesMock};
+    use arrow_schema::DataType;
+
+    use crate::builder::{Int32Builder, ListViewBuilder, make_builder};
     use crate::cast::AsArray;
     use crate::types::Int32Type;
     use crate::{Array, Int32Array};
-    use arrow_schema::DataType;
+
+    use super::*;
 
     fn test_generic_list_view_array_builder_impl<O: OffsetSizeTrait>() {
         let values_builder = Int32Builder::with_capacity(10);
@@ -723,18 +705,5 @@ mod tests {
         let mut builder = ListViewBuilder::new(Int32Builder::new()).with_field(field.clone());
         builder.append_value([Some(1)]);
         builder.finish();
-    }
-
-    #[test]
-    fn test_finish_preserve_values() {
-        let mut builder = ListViewBuilder::new(PreserveValuesMock::default());
-
-        builder.values().inner.append_value(1);
-        builder.append(true);
-
-        let arr = builder.finish_preserve_values();
-
-        assert_eq!(1, arr.len());
-        assert_eq!(1, builder.values().called);
     }
 }

@@ -15,14 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::builder::{ArrayBuilder, BooleanBufferBuilder};
-use crate::{Array, ArrayRef, BooleanArray};
+use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
+use core::any::Any;
+
 use arrow_buffer::Buffer;
 use arrow_buffer::NullBufferBuilder;
 use arrow_data::ArrayData;
 use arrow_schema::{ArrowError, DataType};
-use std::any::Any;
-use std::sync::Arc;
+
+use crate::{
+    Array, ArrayRef, BooleanArray,
+    builder::{ArrayBuilder, BooleanBufferBuilder},
+};
 
 /// Builder for [`BooleanArray`]
 ///

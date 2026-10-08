@@ -75,7 +75,18 @@
 //! assert_eq!(schema, parsed_schema);
 //! ```
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+#[cfg(feature = "std")]
 pub mod parser;
+#[cfg(feature = "std")]
 pub mod printer;
 pub mod types;
 pub mod visitor;

@@ -15,10 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use super::{_MutableArrayData, ArrayData, Extend};
+use alloc::{boxed::Box, vec::Vec};
+
 use arrow_buffer::{ArrowNativeType, Buffer, ToByteSlice};
 use arrow_schema::DataType;
 use num_traits::CheckedAdd;
+
+use super::{_MutableArrayData, ArrayData, Extend};
 
 /// Generic helper to get the last run end value from a run ends array
 fn get_last_run_end<T: ArrowNativeType>(run_ends_data: &super::MutableArrayData) -> T {
@@ -80,7 +83,7 @@ pub fn extend_nulls(mutable: &mut _MutableArrayData, len: usize) {
 }
 
 /// Build run ends bytes and values range directly for batch processing
-fn build_extend_arrays<T: ArrowNativeType + std::ops::Add<Output = T> + CheckedAdd>(
+fn build_extend_arrays<T: ArrowNativeType + core::ops::Add<Output = T> + CheckedAdd>(
     buffer: &Buffer,
     length: usize,
     start: usize,
@@ -168,7 +171,7 @@ fn process_extends_batch<T: ArrowNativeType>(
         .data
         .buffer1
         .extend_from_slice(&run_ends_bytes);
-    mutable.child_data[0].data.len += run_ends_bytes.len() / std::mem::size_of::<T>();
+    mutable.child_data[0].data.len += run_ends_bytes.len() / core::mem::size_of::<T>();
 
     // Batch extend the values array using the range
     let (start_idx, end_idx) =

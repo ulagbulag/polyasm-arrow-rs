@@ -22,13 +22,31 @@
     html_favicon_url = "https://arrow.apache.org/img/arrow-logo_chevrons_black-txt_transparent-bg.svg"
 )]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
 
-mod datatype;
+extern crate alloc;
 
+use core::{fmt::Display, ops};
+
+/// Map type backing the key-value metadata of [`Field`] and [`Schema`].
+///
+/// Under the default `std` feature this is [`std::collections::HashMap`], the
+/// upstream type. Without `std` it is [`alloc::collections::BTreeMap`], the map
+/// `alloc` carries, and iteration follows key order.
+pub type MetadataMap<K, V> = cfg_select! {
+    feature = "std" => {
+        std::collections::HashMap<K, V>
+    }
+    _ => {
+        alloc::collections::BTreeMap<K, V>
+    }
+};
+
+mod datatype;
 pub use datatype::*;
-use std::fmt::Display;
 mod datatype_display;
+#[cfg(feature = "std")]
 mod datatype_parse;
 mod error;
 pub use error::*;
@@ -39,9 +57,8 @@ mod fields;
 pub use fields::*;
 mod schema;
 pub use schema::*;
-use std::ops;
 
-#[cfg(feature = "ffi")]
+#[cfg(all(feature = "ffi", feature = "std"))]
 pub mod ffi;
 
 /// Options that define the sort order of a given column
@@ -90,7 +107,7 @@ pub struct SortOptions {
 }
 
 impl Display for SortOptions {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         if self.descending {
             write!(f, "DESC")?;
         } else {

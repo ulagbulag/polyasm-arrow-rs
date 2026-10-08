@@ -15,9 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use alloc::{string::String, vec::Vec};
+
+use arrow_schema::ArrowError;
+
 use crate::types::GenericStringType;
 use crate::{GenericBinaryArray, GenericByteArray, GenericListArray, OffsetSizeTrait};
-use arrow_schema::ArrowError;
 
 /// A [`GenericByteArray`] for storing `str`
 pub type GenericStringArray<OffsetSize> = GenericByteArray<GenericStringType<OffsetSize>>;
@@ -155,14 +158,19 @@ pub type LargeStringArray = GenericStringArray<i64>;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::Array;
-    use crate::builder::{ListBuilder, PrimitiveBuilder, StringBuilder};
-    use crate::types::UInt8Type;
+    use alloc::sync::Arc;
+
     use arrow_buffer::Buffer;
     use arrow_data::ArrayData;
     use arrow_schema::{DataType, Field};
-    use std::sync::Arc;
+
+    use crate::{
+        Array,
+        builder::{ListBuilder, PrimitiveBuilder, StringBuilder},
+        types::UInt8Type,
+    };
+
+    use super::*;
 
     #[test]
     fn test_string_array_from_u8_slice() {

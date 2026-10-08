@@ -15,16 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::builder::{ArrayBuilder, FixedSizeBinaryBuilder, PrimitiveBuilder};
-use crate::types::ArrowDictionaryKeyType;
-use crate::{Array, ArrayRef, DictionaryArray, PrimitiveArray};
+use alloc::sync::Arc;
+use core::any::Any;
+
 use arrow_buffer::ArrowNativeType;
 use arrow_schema::DataType::FixedSizeBinary;
 use arrow_schema::{ArrowError, DataType};
 use hashbrown::HashTable;
 use num_traits::NumCast;
-use std::any::Any;
-use std::sync::Arc;
+
+use crate::{
+    Array, ArrayRef, DictionaryArray, PrimitiveArray,
+    builder::{ArrayBuilder, FixedSizeBinaryBuilder, PrimitiveBuilder},
+    types::ArrowDictionaryKeyType,
+};
 
 /// Builder for [`DictionaryArray`] of [`FixedSizeBinaryArray`]
 ///
@@ -200,10 +204,6 @@ where
     /// Builds the array without resetting the builder.
     fn finish_cloned(&self) -> ArrayRef {
         Arc::new(self.finish_cloned())
-    }
-
-    fn finish_preserve_values(&mut self) -> ArrayRef {
-        Arc::new(self.finish_preserve_values())
     }
 }
 

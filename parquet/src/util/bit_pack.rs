@@ -18,6 +18,15 @@
 //! Vectorised bit-packing utilities
 
 /// Macro that generates an unpack function taking the number of bits as a const generic
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 macro_rules! unpack_impl {
     ($t:ty, $bytes:literal, $bits:tt) => {
         pub fn unpack<const NUM_BITS: usize>(input: &[u8], output: &mut [$t; $bits]) {

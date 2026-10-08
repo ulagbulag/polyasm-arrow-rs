@@ -17,18 +17,28 @@
 
 //! Logic for reading into arrow arrays: [`ArrayReader`] and [`RowGroups`]
 
-use crate::errors::Result;
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::any::Any;
+
 use arrow_array::ArrayRef;
 use arrow_schema::DataType as ArrowType;
-use std::any::Any;
-use std::sync::Arc;
 
-use crate::arrow::record_reader::GenericRecordReader;
-use crate::arrow::record_reader::buffer::ValuesBuffer;
-use crate::column::page::PageIterator;
-use crate::column::reader::decoder::ColumnValueDecoder;
-use crate::file::metadata::ParquetMetaData;
+#[cfg(feature = "std")]
 use crate::file::reader::{FilePageIterator, FileReader};
+use crate::{
+    arrow::record_reader::{GenericRecordReader, buffer::ValuesBuffer},
+    column::{page::PageIterator, reader::decoder::ColumnValueDecoder},
+    errors::Result,
+    file::metadata::ParquetMetaData,
+};
 
 mod builder;
 mod byte_array;
@@ -49,7 +59,7 @@ mod row_number;
 mod struct_array;
 
 #[cfg(test)]
-pub(crate) mod test_util;
+mod test_util;
 
 // Note that this crate is public under the `experimental` feature flag.
 use crate::file::metadata::RowGroupMetaData;
@@ -155,6 +165,7 @@ pub trait RowGroups {
     fn metadata(&self) -> &ParquetMetaData;
 }
 
+#[cfg(feature = "std")]
 impl RowGroups for Arc<dyn FileReader> {
     fn num_rows(&self) -> usize {
         FileReader::metadata(self.as_ref())

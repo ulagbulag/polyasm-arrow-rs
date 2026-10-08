@@ -15,24 +15,37 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::ops::Range;
+
+use bytes::Bytes;
+
+use crate::{
+    DecodeResult,
+    errors::{ParquetError, Result},
+    file::{
+        FOOTER_SIZE,
+        metadata::{
+            FooterTail, ParquetMetaData, ParquetMetaDataOptions, ParquetMetaDataPushDecoder,
+            parser::decode_metadata, thrift::parquet_schema_from_bytes,
+        },
+        reader::ChunkReader,
+    },
+    io::Read,
+    schema::types::SchemaDescriptor,
+};
+#[cfg(all(feature = "arrow", feature = "async"))]
+use crate::arrow::async_reader::{MetadataFetch, MetadataSuffixFetch};
 #[cfg(feature = "encryption")]
 use crate::encryption::decrypt::FileDecryptionProperties;
-use crate::errors::{ParquetError, Result};
-use crate::file::FOOTER_SIZE;
-use crate::file::metadata::parser::decode_metadata;
-use crate::file::metadata::thrift::parquet_schema_from_bytes;
-use crate::file::metadata::{
-    FooterTail, ParquetMetaData, ParquetMetaDataOptions, ParquetMetaDataPushDecoder,
-};
-use crate::file::reader::ChunkReader;
-use crate::schema::types::SchemaDescriptor;
-use bytes::Bytes;
-use std::sync::Arc;
-use std::{io::Read, ops::Range};
-
-use crate::DecodeResult;
-#[cfg(all(feature = "async", feature = "arrow"))]
-use crate::arrow::async_reader::{MetadataFetch, MetadataSuffixFetch};
 
 /// Reads [`ParquetMetaData`] from a byte stream, with either synchronous or
 /// asynchronous I/O.
@@ -190,7 +203,7 @@ impl ParquetMetaDataReader {
     #[cfg(feature = "encryption")]
     pub fn with_decryption_properties(
         mut self,
-        properties: Option<std::sync::Arc<FileDecryptionProperties>>,
+        properties: Option<alloc::sync::Arc<FileDecryptionProperties>>,
     ) -> Self {
         self.file_decryption_properties = properties;
         self
@@ -530,13 +543,7 @@ impl ParquetMetaDataReader {
                 let remainder_start = *remainder_start as u64;
                 let offset = usize::try_from(range.start - remainder_start)?;
                 let end = usize::try_from(range.end - remainder_start)?;
-                if end > remainder.len() {
-                    return Err(general_err!(
-                        "Corrupted parquet file: index data range ({:?}) exceeds remainder length ({})",
-                        range,
-                        remainder.len()
-                    ));
-                }
+                assert!(end <= remainder.len());
                 remainder.slice(offset..end)
             }
             // Note: this will potentially fetch data already in remainder, this keeps things simple
@@ -544,13 +551,7 @@ impl ParquetMetaDataReader {
         };
 
         // Sanity check
-        if bytes.len() as u64 != range.end - range.start {
-            return Err(general_err!(
-                "Corrupted parquet file: index data length mismatch, expected {}, got {}",
-                range.end - range.start,
-                bytes.len()
-            ));
-        }
+        assert_eq!(bytes.len() as u64, range.end - range.start);
         push_decoder.push_range(range.clone(), bytes)?;
         let metadata = parse_index_data(&mut push_decoder)?;
         self.metadata = Some(metadata);
@@ -801,7 +802,7 @@ impl ParquetMetaDataReader {
         push_decoder.with_file_decryption_properties(
             self.file_decryption_properties
                 .as_ref()
-                .map(std::sync::Arc::clone),
+                .map(alloc::sync::Arc::clone),
         )
     }
     #[cfg(not(feature = "encryption"))]
@@ -881,10 +882,12 @@ fn parse_index_data(push_decoder: &mut ParquetMetaDataPushDecoder) -> Result<Par
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use core::ops::Range;
+
     use crate::file::reader::Length;
     use crate::util::test_common::file_util::get_test_file;
-    use std::ops::Range;
+
+    use super::*;
 
     #[test]
     fn test_parse_metadata_size_smaller_than_footer() {
@@ -1032,7 +1035,13 @@ mod tests {
 
 #[cfg(all(feature = "async", feature = "arrow", test))]
 mod async_tests {
-    use super::*;
+    use alloc::sync::Arc;
+    use core::{
+        future::Future,
+        ops::Range,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+    use std::fs::File;
 
     use arrow::{array::Int32Array, datatypes::DataType};
     use arrow_array::RecordBatch;
@@ -1040,18 +1049,16 @@ mod async_tests {
     use bytes::Bytes;
     use futures::FutureExt;
     use futures::future::BoxFuture;
-    use std::fs::File;
-    use std::future::Future;
-    use std::io::{Read, Seek, SeekFrom};
-    use std::ops::Range;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::NamedTempFile;
 
-    use crate::arrow::ArrowWriter;
-    use crate::file::properties::WriterProperties;
-    use crate::file::reader::Length;
-    use crate::util::test_common::file_util::get_test_file;
+    use crate::{
+        arrow::ArrowWriter,
+        file::{properties::WriterProperties, reader::Length},
+        io::{Read, Seek, SeekFrom},
+        util::test_common::file_util::get_test_file,
+    };
+
+    use super::*;
 
     struct MetadataFetchFn<F>(F);
 

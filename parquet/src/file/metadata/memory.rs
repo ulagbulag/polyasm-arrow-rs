@@ -18,19 +18,34 @@
 //! Memory calculations for [`ParquetMetadata::memory_size`]
 //!
 //! [`ParquetMetadata::memory_size`]: crate::file::metadata::ParquetMetaData::memory_size
-use crate::basic::{BoundaryOrder, ColumnOrder, Compression, Encoding, PageType};
-use crate::data_type::private::ParquetValueType;
-use crate::file::metadata::{
-    ColumnChunkMetaData, FileMetaData, KeyValue, PageEncodingStats, ParquetPageEncodingStats,
-    RowGroupMetaData, SortingColumn,
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
 };
-use crate::file::page_index::column_index::{
-    ByteArrayColumnIndex, ColumnIndex, ColumnIndexMetaData, PrimitiveColumnIndex,
+
+use crate::{
+    basic::{BoundaryOrder, ColumnOrder, Compression, Encoding, PageType},
+    collections::HashMap,
+    data_type::private::ParquetValueType,
+    file::{
+        metadata::{
+            ColumnChunkMetaData, FileMetaData, KeyValue, PageEncodingStats,
+            ParquetPageEncodingStats, RowGroupMetaData, SortingColumn,
+        },
+        page_index::{
+            column_index::{
+                ByteArrayColumnIndex, ColumnIndex, ColumnIndexMetaData, PrimitiveColumnIndex,
+            },
+            offset_index::{OffsetIndexMetaData, PageLocation},
+        },
+        statistics::{Statistics, ValueStatistics},
+    },
 };
-use crate::file::page_index::offset_index::{OffsetIndexMetaData, PageLocation};
-use crate::file::statistics::{Statistics, ValueStatistics};
-use std::collections::HashMap;
-use std::sync::Arc;
 
 /// Trait for calculating the size of various containers
 pub trait HeapSize {
@@ -44,7 +59,7 @@ pub trait HeapSize {
 
 impl<T: HeapSize> HeapSize for Vec<T> {
     fn heap_size(&self) -> usize {
-        let item_size = std::mem::size_of::<T>();
+        let item_size = core::mem::size_of::<T>();
         // account for the contents of the Vec
         (self.capacity() * item_size) +
         // add any heap allocations by contents
@@ -54,7 +69,12 @@ impl<T: HeapSize> HeapSize for Vec<T> {
 
 impl<K: HeapSize, V: HeapSize> HeapSize for HashMap<K, V> {
     fn heap_size(&self) -> usize {
-        let capacity = self.capacity();
+        // A B-tree map reports no capacity, so a `no_std` build accounts for the
+        // entries it actually holds.
+        let capacity = cfg_select! {
+            feature = "std" => self.capacity(),
+            _ => self.len(),
+        };
         if capacity == 0 {
             return 0;
         }
@@ -62,7 +82,7 @@ impl<K: HeapSize, V: HeapSize> HeapSize for HashMap<K, V> {
         // HashMap doesn't provide a way to get its heap size, so this is an approximation based on
         // the behavior of hashbrown::HashMap as at version 0.16.0, and may become inaccurate
         // if the implementation changes.
-        let key_val_size = std::mem::size_of::<(K, V)>();
+        let key_val_size = core::mem::size_of::<(K, V)>();
         // Overhead for the control tags group, which may be smaller depending on architecture
         let group_size = 16;
         // 1 byte of metadata stored per bucket.
@@ -97,21 +117,21 @@ impl<K: HeapSize, V: HeapSize> HeapSize for HashMap<K, V> {
 impl<T: HeapSize> HeapSize for Arc<T> {
     fn heap_size(&self) -> usize {
         // Arc stores weak and strong counts on the heap alongside an instance of T
-        2 * std::mem::size_of::<usize>() + std::mem::size_of::<T>() + self.as_ref().heap_size()
+        2 * core::mem::size_of::<usize>() + core::mem::size_of::<T>() + self.as_ref().heap_size()
     }
 }
 
 impl HeapSize for Arc<dyn HeapSize> {
     fn heap_size(&self) -> usize {
-        2 * std::mem::size_of::<usize>()
-            + std::mem::size_of_val(self.as_ref())
+        2 * core::mem::size_of::<usize>()
+            + core::mem::size_of_val(self.as_ref())
             + self.as_ref().heap_size()
     }
 }
 
 impl<T: HeapSize> HeapSize for Box<T> {
     fn heap_size(&self) -> usize {
-        std::mem::size_of::<T>() + self.as_ref().heap_size()
+        core::mem::size_of::<T>() + self.as_ref().heap_size()
     }
 }
 

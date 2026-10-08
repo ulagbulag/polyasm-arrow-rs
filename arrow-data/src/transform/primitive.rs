@@ -15,10 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::ArrayData;
+use alloc::boxed::Box;
+use core::{mem::size_of, ops::Add};
+
 use arrow_buffer::ArrowNativeType;
-use std::mem::size_of;
-use std::ops::Add;
+
+use crate::ArrayData;
 
 use super::{_MutableArrayData, Extend};
 

@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use alloc_crate::{vec, vec::Vec};
+
 use crate::ArrowNativeType;
 use crate::buffer::ScalarBuffer;
 

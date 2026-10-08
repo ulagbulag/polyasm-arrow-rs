@@ -265,7 +265,7 @@ impl Iterator for BitSliceIterator<'_> {
                 None => {
                     return Some((
                         (start_chunk + start_bit as i64) as usize,
-                        std::mem::replace(&mut self.len, 0),
+                        core::mem::replace(&mut self.len, 0),
                     ));
                 }
             }
@@ -415,13 +415,14 @@ pub fn try_for_each_valid_idx<E, F: FnMut(usize) -> Result<(), E>>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::BooleanBuffer;
+    use core::{fmt::Debug, iter::Copied, slice::Iter};
+
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
-    use std::fmt::Debug;
-    use std::iter::Copied;
-    use std::slice::Iter;
+
+    use crate::BooleanBuffer;
+
+    use super::*;
 
     #[test]
     fn test_bit_iterator_size_hint() {

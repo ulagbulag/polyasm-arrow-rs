@@ -15,32 +15,46 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 mod data;
 mod filter;
 
-use crate::DecodeResult;
-use crate::arrow::ProjectionMask;
-use crate::arrow::array_reader::{ArrayReaderBuilder, CacheOptions, RowGroupCache};
-use crate::arrow::arrow_reader::metrics::ArrowReaderMetrics;
-use crate::arrow::arrow_reader::selection::RowSelectionStrategy;
-use crate::arrow::arrow_reader::{
-    ParquetRecordBatchReader, PredicateOptions, ReadPlanBuilder, RowFilter, RowSelection,
-    RowSelectionPolicy,
-};
-use crate::arrow::in_memory_row_group::ColumnChunkData;
-use crate::arrow::push_decoder::reader_builder::data::DataRequestBuilder;
-use crate::arrow::push_decoder::reader_builder::filter::CacheInfo;
-use crate::arrow::schema::ParquetField;
-use crate::errors::ParquetError;
-use crate::file::metadata::ParquetMetaData;
-use crate::file::page_index::offset_index::OffsetIndexMetaData;
-use crate::util::push_buffers::PushBuffers;
+use alloc::sync::Arc;
+use core::ops::Range;
+
 use bytes::Bytes;
-use data::DataRequest;
-use filter::AdvanceResult;
-use filter::FilterInfo;
-use std::ops::Range;
-use std::sync::{Arc, RwLock};
+
+use crate::{
+    DecodeResult,
+    arrow::{
+        ProjectionMask,
+        array_reader::{ArrayReaderBuilder, CacheOptions, RowGroupCache},
+        arrow_reader::{
+            ParquetRecordBatchReader, ReadPlanBuilder, RowFilter, RowSelection, RowSelectionPolicy,
+            metrics::ArrowReaderMetrics, selection::RowSelectionStrategy,
+        },
+        in_memory_row_group::ColumnChunkData,
+        push_decoder::reader_builder::{data::DataRequestBuilder, filter::CacheInfo},
+        schema::ParquetField,
+    },
+    errors::ParquetError,
+    file::{metadata::ParquetMetaData, page_index::offset_index::OffsetIndexMetaData},
+    sync::RwLock,
+    util::push_buffers::PushBuffers,
+};
+
+use self::{
+    data::DataRequest,
+    filter::{AdvanceResult, FilterInfo},
+};
 
 /// The current row group being read and the read plan
 #[derive(Debug)]
@@ -213,11 +227,6 @@ impl RowGroupReaderBuilder {
         self.buffers.buffered_bytes()
     }
 
-    /// Clear any staged ranges currently buffered for future decode work.
-    pub fn clear_all_ranges(&mut self) {
-        self.buffers.clear_all_ranges();
-    }
-
     /// take the current state, leaving None in its place.
     ///
     /// Returns an error if there the state wasn't put back after the previous
@@ -310,19 +319,6 @@ impl RowGroupReaderBuilder {
     ) -> Result<NextState, ParquetError> {
         let result = match current_state {
             RowGroupDecoderState::Start { row_group_info } => {
-                // Short-circuit once the overall output limit is exhausted.
-                //
-                // `self.limit` tracks how many more rows the reader is still
-                // allowed to emit and is decremented as each row group is
-                // planned in `StartData`, so `Some(0)` means earlier row
-                // groups have already produced the full requested output.
-                if matches!(self.limit, Some(0)) {
-                    return Ok(NextState::result(
-                        RowGroupDecoderState::Finished,
-                        DecodeResult::Finished,
-                    ));
-                }
-
                 let column_chunks = None; // no prior column chunks
 
                 let Some(filter) = self.filter.take() else {
@@ -452,7 +448,6 @@ impl RowGroupReaderBuilder {
                 let cache_options = filter_info.cache_builder().producer();
 
                 let array_reader = ArrayReaderBuilder::new(&row_group, &self.metrics)
-                    .with_batch_size(self.batch_size)
                     .with_cache_options(Some(&cache_options))
                     .with_parquet_metadata(&self.metadata)
                     .build_array_reader(self.fields.as_deref(), predicate.projection())?;
@@ -472,24 +467,20 @@ impl RowGroupReaderBuilder {
                     predicate.projection(),
                     self.row_group_offset_index(row_group_idx),
                 );
-
-                // When this is the final predicate in the chain and an output
-                // limit is set, tell the filter evaluation to stop once enough
-                // matching rows have been accumulated.
-                let predicate_limit = self
-                    .limit
-                    .filter(|_| filter_info.is_last())
-                    .map(|l| l.saturating_add(self.offset.unwrap_or(0)));
-
-                // Evaluate the filter via `with_predicate_options`, opting into
-                // early termination when this is the final predicate and an
-                // output limit was set.
-                let mut predicate_options =
-                    PredicateOptions::new(array_reader, filter_info.current_mut());
-                if let Some(limit) = predicate_limit {
-                    predicate_options = predicate_options.with_limit(limit, row_count);
+                // `with_predicate` actually evaluates the filter, which needs
+                // `arrow-select` and so exists only with `std`.
+                cfg_select! {
+                    feature = "std" => {
+                        plan_builder =
+                            plan_builder.with_predicate(array_reader, filter_info.current_mut())?;
+                    }
+                    _ => {
+                        let _ = array_reader;
+                        return Err(ParquetError::General(String::from(
+                            "Evaluating a row filter requires the `std` feature",
+                        )));
+                    }
                 }
-                plan_builder = plan_builder.with_predicate_options(predicate_options)?;
 
                 let row_group_info = RowGroupInfo {
                     row_group_idx,
@@ -643,7 +634,6 @@ impl RowGroupReaderBuilder {
 
                 // if we have any cached results, connect them up
                 let array_reader_builder = ArrayReaderBuilder::new(&row_group, &self.metrics)
-                    .with_batch_size(self.batch_size)
                     .with_parquet_metadata(&self.metadata);
                 let array_reader = if let Some(cache_info) = cache_info.as_ref() {
                     let cache_options: CacheOptions = cache_info.builder().consumer();
@@ -737,10 +727,20 @@ fn override_selector_strategy_if_needed(
 
     let preferred_strategy = plan_builder.resolve_selection_strategy();
 
-    let force_selectors = matches!(preferred_strategy, RowSelectionStrategy::Mask)
-        && plan_builder.selection().is_some_and(|selection| {
-            selection.should_force_selectors(projection_mask, offset_index)
-        });
+    // Only the mask strategy has to be talked out of skipped pages, and it only
+    // exists with `std`.
+    let force_selectors = cfg_select! {
+        feature = "std" => {
+            matches!(preferred_strategy, RowSelectionStrategy::Mask)
+                && plan_builder.selection().is_some_and(|selection| {
+                    selection.should_force_selectors(projection_mask, offset_index)
+                })
+        }
+        _ => {{
+            let _ = (projection_mask, offset_index);
+            false
+        }}
+    };
 
     let resolved_strategy = if force_selectors {
         RowSelectionStrategy::Selectors
@@ -750,6 +750,7 @@ fn override_selector_strategy_if_needed(
 
     // override the plan builder strategy with the resolved one
     let new_policy = match resolved_strategy {
+        #[cfg(feature = "std")]
         RowSelectionStrategy::Mask => RowSelectionPolicy::Mask,
         RowSelectionStrategy::Selectors => RowSelectionPolicy::Selectors,
     };
@@ -764,6 +765,6 @@ mod tests {
     #[test]
     // Verify that the size of RowGroupDecoderState does not grow too large
     fn test_structure_size() {
-        assert_eq!(std::mem::size_of::<RowGroupDecoderState>(), 200);
+        assert_eq!(core::mem::size_of::<RowGroupDecoderState>(), 200);
     }
 }

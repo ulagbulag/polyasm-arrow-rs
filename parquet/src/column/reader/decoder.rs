@@ -15,6 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use bytes::Bytes;
 
 use crate::basic::{Encoding, EncodingMask};
@@ -160,7 +169,7 @@ impl<T: DataType> ColumnValueDecoder for ColumnValueDecoderImpl<T> {
             descr: descr.clone(),
             current_encoding: None,
             decoder_mask: EncodingMask::default(),
-            decoders: std::array::from_fn(|_| None),
+            decoders: core::array::from_fn(|_| None),
         }
     }
 
@@ -483,7 +492,7 @@ impl RepetitionLevelDecoder for RepetitionLevelDecoderImpl {
     }
 
     fn flush_partial(&mut self) -> bool {
-        std::mem::take(&mut self.has_partial)
+        core::mem::take(&mut self.has_partial)
     }
 }
 

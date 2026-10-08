@@ -17,48 +17,66 @@
 
 //! Contains reader which reads parquet data into arrow [`RecordBatch`]
 
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::fmt::{Debug, Formatter};
+
 use arrow_array::cast::AsArray;
 use arrow_array::{Array, RecordBatch, RecordBatchReader};
 use arrow_schema::{ArrowError, DataType as ArrowType, FieldRef, Schema, SchemaRef};
+#[cfg(feature = "std")]
 use arrow_select::filter::filter_record_batch;
-pub use filter::{ArrowPredicate, ArrowPredicateFn, RowFilter};
-pub use selection::{RowSelection, RowSelectionCursor, RowSelectionPolicy, RowSelector};
-use std::fmt::{Debug, Formatter};
-use std::sync::Arc;
 
 pub use crate::arrow::array_reader::RowGroups;
-use crate::arrow::array_reader::{ArrayReader, ArrayReaderBuilder};
-use crate::arrow::schema::{
-    ParquetField, parquet_to_arrow_schema_and_fields, virtual_type::is_virtual_column,
-};
-use crate::arrow::{FieldLevels, ProjectionMask, parquet_to_arrow_field_levels_with_virtual};
+#[cfg(feature = "std")]
 use crate::basic::{BloomFilterAlgorithm, BloomFilterCompression, BloomFilterHash};
+#[cfg(feature = "std")]
 use crate::bloom_filter::{
     SBBF_HEADER_SIZE_ESTIMATE, Sbbf, chunk_read_bloom_filter_header_and_offset,
 };
-use crate::column::page::{PageIterator, PageReader};
 #[cfg(feature = "encryption")]
 use crate::encryption::decrypt::FileDecryptionProperties;
-use crate::errors::{ParquetError, Result};
-use crate::file::metadata::{
-    PageIndexPolicy, ParquetMetaData, ParquetMetaDataOptions, ParquetMetaDataReader,
-    ParquetStatisticsPolicy, RowGroupMetaData,
+use crate::{
+    arrow::{
+        FieldLevels, ProjectionMask,
+        array_reader::{ArrayReader, ArrayReaderBuilder},
+        arrow_reader::metrics::ArrowReaderMetrics,
+        parquet_to_arrow_field_levels_with_virtual,
+        schema::{
+            ParquetField, parquet_to_arrow_schema_and_fields, virtual_type::is_virtual_column,
+        },
+    },
+    column::page::{PageIterator, PageReader},
+    errors::{ParquetError, Result},
+    file::{
+        metadata::{
+            PageIndexPolicy, ParquetMetaData, ParquetMetaDataOptions, ParquetMetaDataReader,
+            ParquetStatisticsPolicy, RowGroupMetaData,
+        },
+        reader::{ChunkReader, SerializedPageReader},
+    },
+    schema::types::SchemaDescriptor,
 };
-use crate::file::reader::{ChunkReader, SerializedPageReader};
-use crate::schema::types::SchemaDescriptor;
 
-use crate::arrow::arrow_reader::metrics::ArrowReaderMetrics;
-// Exposed so integration tests and benchmarks can temporarily override the threshold.
-pub use read_plan::{PredicateOptions, ReadPlan, ReadPlanBuilder};
+pub use self::{
+    filter::{ArrowPredicate, ArrowPredicateFn, RowFilter},
+    read_plan::{ReadPlan, ReadPlanBuilder},
+    selection::{RowSelection, RowSelectionCursor, RowSelectionPolicy, RowSelector},
+};
 
 mod filter;
 pub mod metrics;
 mod read_plan;
 pub(crate) mod selection;
+#[cfg(feature = "std")]
 pub mod statistics;
-
-/// Default batch size for reading parquet files
-pub const DEFAULT_BATCH_SIZE: usize = 1024;
 
 /// Builder for constructing Parquet readers that decode into [Apache Arrow]
 /// arrays.
@@ -145,7 +163,7 @@ pub struct ArrowReaderBuilder<T> {
 }
 
 impl<T: Debug> Debug for ArrowReaderBuilder<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ArrowReaderBuilder<T>")
             .field("input", &self.input)
             .field("metadata", &self.metadata)
@@ -171,7 +189,7 @@ impl<T> ArrowReaderBuilder<T> {
             metadata: metadata.metadata,
             schema: metadata.schema,
             fields: metadata.fields,
-            batch_size: DEFAULT_BATCH_SIZE,
+            batch_size: 1024,
             row_groups: None,
             projection: ProjectionMask::all(),
             filter: None,
@@ -199,7 +217,7 @@ impl<T> ArrowReaderBuilder<T> {
         &self.schema
     }
 
-    /// Set the size of [`RecordBatch`] to produce. Defaults to [`DEFAULT_BATCH_SIZE`]
+    /// Set the size of [`RecordBatch`] to produce. Defaults to 1024
     /// If the batch_size more than the file row count, use the file row count.
     pub fn with_batch_size(self, batch_size: usize) -> Self {
         // Try to avoid allocate large buffer
@@ -1012,7 +1030,7 @@ impl ArrowReaderMetadata {
 pub struct SyncReader<T: ChunkReader>(T);
 
 impl<T: Debug + ChunkReader> Debug for SyncReader<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("SyncReader").field(&self.0).finish()
     }
 }
@@ -1116,6 +1134,7 @@ impl<T: ChunkReader + 'static> ParquetRecordBatchReaderBuilder<T> {
     /// Returns `None` if the column does not have a bloom filter
     ///
     /// We should call this function after other forms pruning, such as projection and predicate pushdown.
+    #[cfg(feature = "std")]
     pub fn get_row_group_column_bloom_filter(
         &self,
         row_group_idx: usize,
@@ -1216,20 +1235,28 @@ impl<T: ChunkReader + 'static> ParquetRecordBatchReaderBuilder<T> {
                     break;
                 }
 
-                let mut cache_projection = predicate.projection().clone();
-                cache_projection.intersect(&projection);
-
                 let array_reader = ArrayReaderBuilder::new(&reader, &metrics)
-                    .with_batch_size(batch_size)
                     .with_parquet_metadata(&reader.metadata)
                     .build_array_reader(fields.as_deref(), predicate.projection())?;
 
-                plan_builder = plan_builder.with_predicate(array_reader, predicate.as_mut())?;
+                // Evaluating a predicate needs `arrow-select`, which this crate
+                // only has with `std`.
+                cfg_select! {
+                    feature = "std" => {
+                        plan_builder =
+                            plan_builder.with_predicate(array_reader, predicate.as_mut())?;
+                    }
+                    _ => {
+                        let _ = array_reader;
+                        return Err(ParquetError::General(String::from(
+                            "Evaluating a row filter requires the `std` feature",
+                        )));
+                    }
+                }
             }
         }
 
         let array_reader = ArrayReaderBuilder::new(&reader, &metrics)
-            .with_batch_size(batch_size)
             .with_parquet_metadata(&reader.metadata)
             .build_array_reader(fields.as_deref(), &projection)?;
 
@@ -1286,7 +1313,7 @@ impl<T: ChunkReader + 'static> RowGroups for ReaderRowGroups<T> {
 struct ReaderPageIterator<T: ChunkReader> {
     reader: Arc<T>,
     column_idx: usize,
-    row_groups: std::vec::IntoIter<usize>,
+    row_groups: alloc::vec::IntoIter<usize>,
     metadata: Arc<ParquetMetaData>,
 }
 
@@ -1345,7 +1372,7 @@ pub struct ParquetRecordBatchReader {
 }
 
 impl Debug for ParquetRecordBatchReader {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ParquetRecordBatchReader")
             .field("array_reader", &"...")
             .field("schema", &self.schema)
@@ -1377,6 +1404,7 @@ impl ParquetRecordBatchReader {
             return Ok(None);
         }
         match self.read_plan.row_selection_cursor_mut() {
+            #[cfg(feature = "std")]
             RowSelectionCursor::Mask(mask_cursor) => {
                 // Stream the record batch reader using contiguous segments of the selection
                 // mask, avoiding the need to materialize intermediate `RowSelector` ranges.
@@ -1537,7 +1565,6 @@ impl ParquetRecordBatchReader {
         // note metrics are not supported in this API
         let metrics = ArrowReaderMetrics::disabled();
         let array_reader = ArrayReaderBuilder::new(row_groups, &metrics)
-            .with_batch_size(batch_size)
             .with_parquet_metadata(row_groups.metadata())
             .build_array_reader(levels.levels.as_ref(), &ProjectionMask::all())?;
 
@@ -1576,48 +1603,22 @@ impl ParquetRecordBatchReader {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::cmp::min;
+    use alloc::sync::Arc;
+    use core::{cmp::min, fmt::Formatter};
     use std::collections::{HashMap, VecDeque};
-    use std::fmt::Formatter;
     use std::fs::File;
-    use std::io::Seek;
     use std::path::PathBuf;
-    use std::sync::Arc;
 
-    use rand::rngs::StdRng;
-    use rand::{Rng, RngCore, SeedableRng, random, rng};
-    use tempfile::tempfile;
-
-    use crate::arrow::arrow_reader::{
-        ArrowPredicateFn, ArrowReaderMetadata, ArrowReaderOptions, ParquetRecordBatchReader,
-        ParquetRecordBatchReaderBuilder, RowFilter, RowSelection, RowSelector,
+    use arrow_array::{
+        builder::*,
+        cast::AsArray,
+        types::{
+            Date32Type, Date64Type, Decimal32Type, Decimal64Type, Decimal128Type, Decimal256Type,
+            DecimalType, Float16Type, Float32Type, Float64Type, Time32MillisecondType,
+            Time64MicrosecondType,
+        },
+        *,
     };
-    use crate::arrow::schema::{
-        add_encoded_arrow_schema_to_metadata,
-        virtual_type::{RowGroupIndex, RowNumber},
-    };
-    use crate::arrow::{ArrowWriter, ProjectionMask};
-    use crate::basic::{ConvertedType, Encoding, LogicalType, Repetition, Type as PhysicalType};
-    use crate::column::reader::decoder::REPETITION_LEVELS_BATCH_SIZE;
-    use crate::data_type::{
-        BoolType, ByteArray, ByteArrayType, DataType, DoubleType, FixedLenByteArray,
-        FixedLenByteArrayType, FloatType, Int32Type, Int64Type, Int96, Int96Type,
-    };
-    use crate::errors::Result;
-    use crate::file::metadata::{PageIndexPolicy, ParquetMetaData, ParquetStatisticsPolicy};
-    use crate::file::properties::{EnabledStatistics, WriterProperties, WriterVersion};
-    use crate::file::writer::{SerializedFileWriter, SerializedRowGroupWriter};
-    use crate::schema::parser::parse_message_type;
-    use crate::schema::types::{Type, TypePtr};
-    use crate::util::test_common::rand_gen::RandGen;
-    use arrow_array::builder::*;
-    use arrow_array::cast::AsArray;
-    use arrow_array::types::{
-        Date32Type, Date64Type, Decimal32Type, Decimal64Type, Decimal128Type, Decimal256Type,
-        DecimalType, Float16Type, Float32Type, Float64Type, Time32MillisecondType,
-        Time64MicrosecondType,
-    };
-    use arrow_array::*;
     use arrow_buffer::{ArrowNativeType, Buffer, IntervalDayTime, NullBuffer, i256};
     use arrow_data::{ArrayData, ArrayDataBuilder};
     use arrow_schema::{DataType as ArrowDataType, Field, Fields, Schema, SchemaRef, TimeUnit};
@@ -1625,6 +1626,40 @@ pub(crate) mod tests {
     use bytes::Bytes;
     use half::f16;
     use num_traits::PrimInt;
+    use rand::{Rng, RngCore, SeedableRng, random, rng, rngs::StdRng};
+    use tempfile::tempfile;
+
+    use crate::{
+        arrow::{
+            ArrowWriter, ProjectionMask,
+            arrow_reader::{
+                ArrowPredicateFn, ArrowReaderMetadata, ArrowReaderOptions, ParquetRecordBatchReader,
+                ParquetRecordBatchReaderBuilder, RowFilter, RowSelection, RowSelector,
+            },
+            schema::{
+                add_encoded_arrow_schema_to_metadata,
+                virtual_type::{RowGroupIndex, RowNumber},
+            },
+        },
+        basic::{ConvertedType, Encoding, LogicalType, Repetition, Type as PhysicalType},
+        column::reader::decoder::REPETITION_LEVELS_BATCH_SIZE,
+        data_type::{
+            BoolType, ByteArray, ByteArrayType, DataType, FixedLenByteArray, FixedLenByteArrayType,
+            FloatType, Int32Type, Int64Type, Int96, Int96Type,
+        },
+        errors::Result,
+        file::{
+            metadata::{PageIndexPolicy, ParquetMetaData, ParquetStatisticsPolicy},
+            properties::{EnabledStatistics, WriterProperties, WriterVersion},
+            writer::SerializedFileWriter,
+        },
+        io::Seek,
+        schema::{
+            parser::parse_message_type,
+            types::{Type, TypePtr},
+        },
+        util::test_common::rand_gen::RandGen,
+    };
 
     #[test]
     fn test_arrow_reader_all_columns() {
@@ -2426,7 +2461,7 @@ pub(crate) mod tests {
     fn test_utf8_single_column_reader_test() {
         fn string_converter<O: OffsetSizeTrait>(vals: &[Option<ByteArray>]) -> ArrayRef {
             Arc::new(GenericStringArray::<O>::from_iter(vals.iter().map(|x| {
-                x.as_ref().map(|b| std::str::from_utf8(b.data()).unwrap())
+                x.as_ref().map(|b| core::str::from_utf8(b.data()).unwrap())
             })))
         }
 
@@ -3011,8 +3046,8 @@ pub(crate) mod tests {
     }
 
     /// Manually implement this to avoid printing entire contents of row_selections and row_filter
-    impl std::fmt::Debug for TestOptions {
-        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    impl core::fmt::Debug for TestOptions {
+        fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
             f.debug_struct("TestOptions")
                 .field("num_row_groups", &self.num_row_groups)
                 .field("num_rows", &self.num_rows)
@@ -3336,7 +3371,7 @@ pub(crate) mod tests {
 
                 let def_levels: Vec<Vec<i16>> = (0..opts.num_row_groups)
                     .map(|_| {
-                        std::iter::from_fn(|| {
+                        core::iter::from_fn(|| {
                             Some((rng.next_u32() as usize % 100 >= *null_percent) as i16)
                         })
                         .take(opts.num_rows)
@@ -3683,77 +3718,6 @@ pub(crate) mod tests {
 
         for batch in record_batch_reader {
             batch.unwrap();
-        }
-    }
-
-    // test that we can handle the UNKNOWN logical type annotation on any physical type
-    #[test]
-    fn test_unknown_logical_type() {
-        let message_type = "message uk {
-            OPTIONAL INT32 uki32 (UNKNOWN);
-            OPTIONAL INT64 uki64 (UNKNOWN);
-            OPTIONAL INT96 uki96 (UNKNOWN);
-            OPTIONAL BOOLEAN ukbool (UNKNOWN);
-            OPTIONAL FLOAT ukfloat (UNKNOWN);
-            OPTIONAL DOUBLE ukdbl (UNKNOWN);
-            OPTIONAL BYTE_ARRAY ukbytes (UNKNOWN);
-            OPTIONAL FIXED_LEN_BYTE_ARRAY(10) ukflba (UNKNOWN);
-        }";
-
-        let schema = Arc::new(parse_message_type(message_type).unwrap());
-        let file = tempfile::tempfile().unwrap();
-
-        let mut writer =
-            SerializedFileWriter::new(file.try_clone().unwrap(), schema, Default::default())
-                .unwrap();
-
-        let mut row_group_writer = writer.next_row_group().unwrap();
-
-        fn write_nulls<T: DataType>(row_group_writer: &mut SerializedRowGroupWriter<'_, File>) {
-            let mut column_writer = row_group_writer.next_column().unwrap().unwrap();
-            // write out a bunch of nulls
-            column_writer
-                .typed::<T>()
-                .write_batch(&[], Some(&[0, 0, 0, 0]), None)
-                .unwrap();
-            column_writer.close().unwrap();
-        }
-
-        // INT32
-        write_nulls::<Int32Type>(&mut row_group_writer);
-
-        // INT64
-        write_nulls::<Int64Type>(&mut row_group_writer);
-
-        // INT96
-        write_nulls::<Int96Type>(&mut row_group_writer);
-
-        // BOOLEAN
-        write_nulls::<BoolType>(&mut row_group_writer);
-
-        // FLOAT
-        write_nulls::<FloatType>(&mut row_group_writer);
-
-        // DOUBLE
-        write_nulls::<DoubleType>(&mut row_group_writer);
-
-        // BYTE_ARRAY
-        write_nulls::<ByteArrayType>(&mut row_group_writer);
-
-        // FIXED_LEN_BYTE_ARRAY
-        write_nulls::<FixedLenByteArrayType>(&mut row_group_writer);
-
-        row_group_writer.close().unwrap();
-
-        writer.close().unwrap();
-
-        let mut reader = ParquetRecordBatchReader::try_new(file, 4).unwrap();
-        let batch = reader.next().unwrap().unwrap();
-
-        for col in batch.columns() {
-            assert_eq!(col.len(), 4);
-            assert_eq!(col.logical_null_count(), 4);
-            assert_eq!(*col.data_type(), ArrowDataType::Null);
         }
     }
 

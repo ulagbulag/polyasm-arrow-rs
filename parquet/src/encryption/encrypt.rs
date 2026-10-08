@@ -17,17 +17,27 @@
 
 //! Configuration and utilities for Parquet Modular Encryption
 
-use crate::encryption::ciphers::{
-    BlockEncryptor, NONCE_LEN, RingGcmBlockEncryptor, SIZE_LEN, TAG_LEN,
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
 };
-use crate::errors::{ParquetError, Result};
-use crate::file::column_crypto_metadata::{ColumnCryptoMetaData, EncryptionWithColumnKey};
-use crate::parquet_thrift::{ThriftCompactOutputProtocol, WriteThrift};
-use crate::schema::types::{ColumnDescPtr, SchemaDescriptor};
-use ring::rand::{SecureRandom, SystemRandom};
 use std::collections::{HashMap, HashSet};
-use std::io::Write;
-use std::sync::Arc;
+
+use ring::rand::{SecureRandom, SystemRandom};
+
+use crate::{
+    encryption::ciphers::{BlockEncryptor, NONCE_LEN, RingGcmBlockEncryptor, SIZE_LEN, TAG_LEN},
+    errors::{ParquetError, Result},
+    file::column_crypto_metadata::{ColumnCryptoMetaData, EncryptionWithColumnKey},
+    io::Write,
+    parquet_thrift::{ThriftCompactOutputProtocol, WriteThrift},
+    schema::types::{ColumnDescPtr, SchemaDescriptor},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 struct EncryptionKey {
@@ -148,7 +158,7 @@ impl FileEncryptionProperties {
     pub(crate) fn validate_encrypted_column_names(
         &self,
         schema: &SchemaDescriptor,
-    ) -> std::result::Result<(), ParquetError> {
+    ) -> core::result::Result<(), ParquetError> {
         let column_paths = schema
             .columns()
             .iter()

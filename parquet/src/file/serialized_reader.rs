@@ -18,31 +18,48 @@
 //! Contains implementations of the reader traits FileReader, RowGroupReader and PageReader
 //! Also contains implementations of the ChunkReader for files (with buffering) and byte arrays (RAM)
 
-use crate::basic::{PageType, Type};
-use crate::bloom_filter::Sbbf;
-use crate::column::page::{Page, PageMetadata, PageReader};
-use crate::compression::{Codec, create_codec};
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use alloc::{collections::VecDeque, sync::Arc};
+#[cfg(feature = "std")]
+use std::{fs::File, path::Path};
+
+use bytes::Bytes;
+
 #[cfg(feature = "encryption")]
 use crate::encryption::decrypt::{CryptoContext, read_and_decrypt};
-use crate::errors::{ParquetError, Result};
-use crate::file::metadata::thrift::PageHeader;
-use crate::file::page_index::offset_index::{OffsetIndexMetaData, PageLocation};
-use crate::file::statistics;
-use crate::file::{
-    metadata::*,
-    properties::{ReaderProperties, ReaderPropertiesPtr},
-    reader::*,
-};
 #[cfg(feature = "encryption")]
 use crate::parquet_thrift::ThriftSliceInputProtocol;
-use crate::parquet_thrift::{ReadThrift, ThriftReadInputProtocol};
-use crate::record::Row;
-use crate::record::reader::RowIter;
-use crate::schema::types::{SchemaDescPtr, Type as SchemaType};
-use bytes::Bytes;
-use std::collections::VecDeque;
-use std::{fs::File, io::Read, path::Path, sync::Arc};
+use crate::{
+    basic::{PageType, Type},
+    column::page::{Page, PageMetadata, PageReader},
+    compression::{Codec, create_codec},
+    errors::{ParquetError, Result},
+    file::{
+        metadata::{thrift::PageHeader, *},
+        page_index::offset_index::{OffsetIndexMetaData, PageLocation},
+        properties::{ReaderProperties, ReaderPropertiesPtr},
+        reader::*,
+        statistics,
+    },
+    io::Read,
+    parquet_thrift::{ReadThrift, ThriftReadInputProtocol},
+    schema::types::SchemaDescPtr,
+};
+#[cfg(feature = "std")]
+use crate::{
+    bloom_filter::Sbbf,
+    record::{Row, reader::RowIter},
+    schema::types::Type as SchemaType,
+};
 
+#[cfg(feature = "std")]
 impl TryFrom<File> for SerializedFileReader<File> {
     type Error = ParquetError;
 
@@ -51,6 +68,7 @@ impl TryFrom<File> for SerializedFileReader<File> {
     }
 }
 
+#[cfg(feature = "std")]
 impl TryFrom<&Path> for SerializedFileReader<File> {
     type Error = ParquetError;
 
@@ -60,6 +78,7 @@ impl TryFrom<&Path> for SerializedFileReader<File> {
     }
 }
 
+#[cfg(feature = "std")]
 impl TryFrom<String> for SerializedFileReader<File> {
     type Error = ParquetError;
 
@@ -68,6 +87,7 @@ impl TryFrom<String> for SerializedFileReader<File> {
     }
 }
 
+#[cfg(feature = "std")]
 impl TryFrom<&str> for SerializedFileReader<File> {
     type Error = ParquetError;
 
@@ -78,6 +98,7 @@ impl TryFrom<&str> for SerializedFileReader<File> {
 
 /// Conversion into a [`RowIter`]
 /// using the full file schema over all row groups.
+#[cfg(feature = "std")]
 impl IntoIterator for SerializedFileReader<File> {
     type Item = Result<Row>;
     type IntoIter = RowIter<'static>;
@@ -91,6 +112,7 @@ impl IntoIterator for SerializedFileReader<File> {
 // Implementations of file & row group readers
 
 /// A serialized implementation for Parquet [`FileReader`].
+#[cfg(feature = "std")]
 pub struct SerializedFileReader<R: ChunkReader> {
     chunk_reader: Arc<R>,
     metadata: Arc<ParquetMetaData>,
@@ -106,6 +128,7 @@ pub type ReadGroupPredicate = Box<dyn FnMut(&RowGroupMetaData, usize) -> bool>;
 /// For the predicates that are added to the builder,
 /// they will be chained using 'AND' to filter the row groups.
 #[derive(Default)]
+#[cfg(feature = "std")]
 pub struct ReadOptionsBuilder {
     predicates: Vec<ReadGroupPredicate>,
     enable_page_index: bool,
@@ -113,6 +136,7 @@ pub struct ReadOptionsBuilder {
     metadata_options: ParquetMetaDataOptions,
 }
 
+#[cfg(feature = "std")]
 impl ReadOptionsBuilder {
     /// New builder
     pub fn new() -> Self {
@@ -218,6 +242,7 @@ impl ReadOptionsBuilder {
 ///
 /// Predicates are currently only supported on row group metadata.
 /// All predicates will be chained using 'AND' to filter the row groups.
+#[cfg(feature = "std")]
 pub struct ReadOptions {
     predicates: Vec<ReadGroupPredicate>,
     enable_page_index: bool,
@@ -225,6 +250,7 @@ pub struct ReadOptions {
     metadata_options: ParquetMetaDataOptions,
 }
 
+#[cfg(feature = "std")]
 impl<R: 'static + ChunkReader> SerializedFileReader<R> {
     /// Creates file reader from a Parquet file.
     /// Returns an error if the Parquet file does not exist or is corrupt.
@@ -281,6 +307,7 @@ impl<R: 'static + ChunkReader> SerializedFileReader<R> {
 }
 
 /// Get midpoint offset for a row group
+#[cfg(feature = "std")]
 fn get_midpoint_offset(meta: &RowGroupMetaData) -> i64 {
     let col = meta.column(0);
     let mut offset = col.data_page_offset();
@@ -292,6 +319,7 @@ fn get_midpoint_offset(meta: &RowGroupMetaData) -> i64 {
     offset + meta.compressed_size() / 2
 }
 
+#[cfg(feature = "std")]
 impl<R: 'static + ChunkReader> FileReader for SerializedFileReader<R> {
     fn metadata(&self) -> &ParquetMetaData {
         &self.metadata
@@ -320,6 +348,7 @@ impl<R: 'static + ChunkReader> FileReader for SerializedFileReader<R> {
 }
 
 /// A serialized implementation for Parquet [`RowGroupReader`].
+#[cfg(feature = "std")]
 pub struct SerializedRowGroupReader<'a, R: ChunkReader> {
     chunk_reader: Arc<R>,
     metadata: &'a RowGroupMetaData,
@@ -328,6 +357,7 @@ pub struct SerializedRowGroupReader<'a, R: ChunkReader> {
     bloom_filters: Vec<Option<Sbbf>>,
 }
 
+#[cfg(feature = "std")]
 impl<'a, R: ChunkReader> SerializedRowGroupReader<'a, R> {
     /// Creates new row group reader from a file, row group metadata and custom config.
     pub fn new(
@@ -343,7 +373,7 @@ impl<'a, R: ChunkReader> SerializedRowGroupReader<'a, R> {
                 .map(|col| Sbbf::read_from_column_chunk(col, &*chunk_reader))
                 .collect::<Result<Vec<_>>>()?
         } else {
-            std::iter::repeat_n(None, metadata.columns().len()).collect()
+            core::iter::repeat_n(None, metadata.columns().len()).collect()
         };
         Ok(Self {
             chunk_reader,
@@ -355,6 +385,7 @@ impl<'a, R: ChunkReader> SerializedRowGroupReader<'a, R> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<R: 'static + ChunkReader> RowGroupReader for SerializedRowGroupReader<'_, R> {
     fn metadata(&self) -> &RowGroupMetaData {
         self.metadata
@@ -758,7 +789,7 @@ impl<R: ChunkReader> SerializedPageReader<R> {
         }
 
         impl<R: Read> Read for TrackedRead<R> {
-            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
                 let v = self.inner.read(buf)?;
                 self.bytes_read += v;
                 Ok(v)
@@ -779,7 +810,7 @@ impl<R: ChunkReader> SerializedPageReader<R> {
         page_index: usize,
         dictionary_page: bool,
     ) -> Result<(usize, PageHeader)> {
-        let mut input = std::io::Cursor::new(buffer);
+        let mut input = crate::io::Cursor::new(buffer);
         let header = context.read_page_header(&mut input, page_index, dictionary_page)?;
         let header_len = input.position() as usize;
         Ok((header_len, header))

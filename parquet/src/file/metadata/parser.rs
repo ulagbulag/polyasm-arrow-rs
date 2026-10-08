@@ -20,6 +20,15 @@
 //! These functions parse thrift-encoded metadata from a byte slice
 //! into the corresponding Rust structures
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::errors::ParquetError;
 use crate::file::metadata::thrift::parquet_metadata_from_bytes;
 use crate::file::metadata::{
@@ -42,7 +51,7 @@ pub(crate) use inner::MetadataParser;
 
 #[cfg(feature = "encryption")]
 mod inner {
-    use std::sync::Arc;
+    use alloc::sync::Arc;
 
     use super::*;
     use crate::encryption::decrypt::FileDecryptionProperties;
@@ -157,9 +166,11 @@ mod inner {
 
 #[cfg(not(feature = "encryption"))]
 mod inner {
-    use super::*;
+    use alloc::sync::Arc;
+
     use crate::errors::Result;
-    use std::sync::Arc;
+
+    use super::*;
     /// parallel implementation when encryption feature is not enabled
     ///
     /// This has the same API as the encryption-enabled version

@@ -15,10 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use core::mem::size_of;
+
 use crate::bit_iterator::BitSliceIterator;
 use crate::contains_nulls;
-use std::mem::size_of;
-
 use crate::data::ArrayData;
 
 use super::utils::equal_len;

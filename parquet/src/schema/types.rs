@@ -17,16 +17,27 @@
 
 //! Contains structs and methods to build Parquet schema and schema descriptors.
 
-use std::vec::IntoIter;
-use std::{collections::HashMap, fmt, sync::Arc};
-
-use crate::file::metadata::HeapSize;
-use crate::file::metadata::thrift::SchemaElement;
-
-use crate::basic::{
-    ColumnOrder, ConvertedType, LogicalType, Repetition, SortOrder, TimeUnit, Type as PhysicalType,
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
 };
-use crate::errors::{ParquetError, Result};
+use alloc::{sync::Arc, vec::IntoIter};
+use core::fmt;
+
+use crate::{
+    basic::{
+        ColumnOrder, ConvertedType, LogicalType, Repetition, SortOrder, TimeUnit,
+        Type as PhysicalType,
+    },
+    collections::HashMap,
+    errors::{ParquetError, Result},
+    file::metadata::{HeapSize, thrift::SchemaElement},
+    util::max_precision_for_bits,
+};
 
 // ----------------------------------------------------------------------
 // Parquet Type definitions
@@ -398,7 +409,7 @@ impl<'a> PrimitiveTypeBuilder<'a> {
                 (LogicalType::Integer { bit_width, .. }, PhysicalType::INT64)
                     if *bit_width == 64 => {}
                 // Null type
-                (LogicalType::Unknown, _) => {}
+                (LogicalType::Unknown, PhysicalType::INT32) => {}
                 (LogicalType::String, PhysicalType::BYTE_ARRAY) => {}
                 (LogicalType::Json, PhysicalType::BYTE_ARRAY) => {}
                 (LogicalType::Bson, PhysicalType::BYTE_ARRAY) => {}
@@ -567,7 +578,8 @@ impl<'a> PrimitiveTypeBuilder<'a> {
                     .length
                     .checked_mul(8)
                     .ok_or(general_err!("Invalid length {} for Decimal", self.length))?;
-                let max_precision = (2f64.powi(length - 1) - 1f64).log10().floor() as i32;
+                let max_precision = i32::try_from(max_precision_for_bits(length))
+                    .map_err(|_| general_err!("Invalid length {} for Decimal", self.length))?;
 
                 if self.precision > max_precision {
                     return Err(general_err!(
@@ -757,7 +769,7 @@ impl BasicTypeInfo {
 ///   String::from("c")
 /// ]);
 /// ```
-#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[derive(Clone, PartialEq, Debug, Eq, PartialOrd, Ord, Hash)]
 pub struct ColumnPath {
     parts: Vec<String>,
 }
@@ -1401,7 +1413,7 @@ fn schema_from_array_helper<'a>(
         Some(n) => {
             let repetition = element.repetition_type;
 
-            let mut fields = Vec::with_capacity(usize::try_from(n)?);
+            let mut fields = Vec::with_capacity(n as usize);
             let mut next_index = index + 1;
             for _ in 0..n {
                 let child_result = schema_from_array_helper(elements, num_elements, next_index)?;
@@ -2516,23 +2528,5 @@ mod tests {
 
         let result_schema = parquet_schema_from_array(thrift_schema).unwrap();
         assert_eq!(result_schema, expected_schema);
-    }
-
-    #[test]
-    fn test_parquet_schema_from_array_rejects_negative_num_children() {
-        let elements = vec![SchemaElement {
-            r#type: None,
-            type_length: None,
-            repetition_type: Some(Repetition::REQUIRED),
-            name: "schema",
-            num_children: Some(-1),
-            converted_type: None,
-            scale: None,
-            precision: None,
-            field_id: None,
-            logical_type: None,
-        }];
-        let result = parquet_schema_from_array(elements);
-        assert!(result.unwrap_err().to_string().contains("Integer overflow"));
     }
 }

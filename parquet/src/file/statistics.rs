@@ -39,7 +39,16 @@
 //! }
 //! ```
 
-use std::fmt;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+use core::fmt;
 
 use crate::basic::Type;
 use crate::data_type::private::ParquetValueType;
@@ -1122,7 +1131,7 @@ mod tests {
 
     // Ensures that we can call ValueStatistics::min_opt from a
     // generic function without reyling on a bound to a private trait.
-    fn generic_statistics_handler<T: std::fmt::Display>(stats: ValueStatistics<T>) -> String {
+    fn generic_statistics_handler<T: core::fmt::Display>(stats: ValueStatistics<T>) -> String {
         match stats.min_opt() {
             Some(s) => format!("min: {}", s),
             None => "min: NA".to_string(),

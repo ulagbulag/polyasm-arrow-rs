@@ -17,6 +17,18 @@
 
 //! Encryption support for Thrift serialization
 
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+#[cfg(feature = "std")]
+use crate::io::Write;
 use crate::{
     encryption::decrypt::{FileDecryptionProperties, FileDecryptor},
     errors::{ParquetError, Result},
@@ -33,8 +45,6 @@ use crate::{
     },
     thrift_struct, thrift_union,
 };
-use std::io::Write;
-use std::sync::Arc;
 
 thrift_struct!(
 pub(crate) struct AesGcmV1 {

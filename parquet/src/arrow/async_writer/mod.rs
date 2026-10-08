@@ -55,10 +55,24 @@
 //!
 //! [`object_store`] provides it's native implementation of [`AsyncFileWriter`] by [`ParquetObjectWriter`].
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::mem;
+
 #[cfg(feature = "object_store")]
 mod store;
-#[cfg(feature = "object_store")]
-pub use store::*;
+
+use arrow_array::RecordBatch;
+use arrow_schema::SchemaRef;
+use bytes::Bytes;
+use futures::{FutureExt, future::BoxFuture};
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use crate::{
     arrow::ArrowWriter,
@@ -69,13 +83,9 @@ use crate::{
         properties::WriterProperties,
     },
 };
-use arrow_array::RecordBatch;
-use arrow_schema::SchemaRef;
-use bytes::Bytes;
-use futures::FutureExt;
-use futures::future::BoxFuture;
-use std::mem;
-use tokio::io::{AsyncWrite, AsyncWriteExt};
+
+#[cfg(feature = "object_store")]
+pub use self::store::*;
 
 /// The asynchronous interface used by [`AsyncArrowWriter`] to write parquet files.
 pub trait AsyncFileWriter: Send {
@@ -294,11 +304,13 @@ impl<W: AsyncFileWriter> AsyncArrowWriter<W> {
 
 #[cfg(test)]
 mod tests {
-    use crate::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
+    use alloc::sync::Arc;
+
     use arrow::datatypes::{DataType, Field, Schema};
     use arrow_array::{ArrayRef, BinaryArray, Int32Array, Int64Array, RecordBatchReader};
     use bytes::Bytes;
-    use std::sync::Arc;
+
+    use crate::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
 
     use super::*;
 

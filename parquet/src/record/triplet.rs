@@ -15,6 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::basic::Type as PhysicalType;
 use crate::column::reader::{ColumnReader, ColumnReaderImpl, get_typed_column_reader};
 use crate::data_type::*;

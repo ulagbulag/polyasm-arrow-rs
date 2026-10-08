@@ -23,8 +23,9 @@
 // Copied from chronoutil crate
 
 //! Contains utility functions for shifting Date objects.
+use core::cmp::Ordering;
+
 use chrono::{DateTime, Days, Months, NaiveDate, TimeZone};
-use std::cmp::Ordering;
 
 /// Add the given number of months to the given date.
 ///

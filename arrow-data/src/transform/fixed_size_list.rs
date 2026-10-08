@@ -15,8 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::ArrayData;
+use alloc::boxed::Box;
+
 use arrow_schema::DataType;
+
+use crate::ArrayData;
 
 use super::{_MutableArrayData, Extend};
 

@@ -15,10 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::ArrayData;
+use alloc::boxed::Box;
+
 use arrow_buffer::{ArrowNativeType, MutableBuffer};
 use num_integer::Integer;
 use num_traits::{AsPrimitive, CheckedAdd};
+
+use crate::ArrayData;
 
 use super::{
     _MutableArrayData, Extend,

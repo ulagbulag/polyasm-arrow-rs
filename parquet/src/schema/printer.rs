@@ -43,6 +43,15 @@
 //! }
 //! ```
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use std::{fmt, io};
 
 use crate::basic::{ConvertedType, LogicalType, TimeUnit, Type as PhysicalType};
@@ -457,13 +466,13 @@ impl Printer<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    use std::sync::Arc;
+    use alloc::sync::Arc;
 
     use crate::basic::{EdgeInterpolationAlgorithm, Repetition, Type as PhysicalType};
     use crate::errors::Result;
     use crate::schema::parser::parse_message_type;
+
+    use super::*;
 
     fn assert_print_parse_message(message: Type) {
         let mut s = String::new();

@@ -46,6 +46,16 @@
 //! [parquet-geo-spec]: https://github.com/apache/parquet-format/blob/master/Geospatial.md
 //! [geo-types]: https://github.com/apache/parquet-format/blob/master/Geospatial.md#geospatial-types
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+#[cfg(feature = "std")]
 pub mod accumulator;
 pub mod bounding_box;
 pub mod statistics;

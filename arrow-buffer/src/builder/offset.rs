@@ -15,7 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::ops::Deref;
+use alloc_crate::vec::Vec;
+use core::ops::Deref;
 
 use crate::{ArrowNativeType, OffsetBuffer};
 

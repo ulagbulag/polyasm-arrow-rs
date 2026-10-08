@@ -17,8 +17,16 @@
 
 //! [ArrowReaderMetrics] for collecting metrics about the Arrow reader
 
-use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::sync::atomic::AtomicUsize;
 
 /// This enum represents the state of Arrow reader metrics collection.
 ///
@@ -65,7 +73,7 @@ impl ArrowReaderMetrics {
             Self::Enabled(inner) => Some(
                 inner
                     .records_read_from_inner
-                    .load(std::sync::atomic::Ordering::Relaxed),
+                    .load(core::sync::atomic::Ordering::Relaxed),
             ),
         }
     }
@@ -85,7 +93,7 @@ impl ArrowReaderMetrics {
             Self::Enabled(inner) => Some(
                 inner
                     .records_read_from_cache
-                    .load(std::sync::atomic::Ordering::Relaxed),
+                    .load(core::sync::atomic::Ordering::Relaxed),
             ),
         }
     }
@@ -97,7 +105,7 @@ impl ArrowReaderMetrics {
         };
         inner
             .records_read_from_inner
-            .fetch_add(count, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(count, core::sync::atomic::Ordering::Relaxed);
     }
 
     /// Increments the count of records read from the cache
@@ -108,7 +116,7 @@ impl ArrowReaderMetrics {
 
         inner
             .records_read_from_cache
-            .fetch_add(count, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(count, core::sync::atomic::Ordering::Relaxed);
     }
 }
 

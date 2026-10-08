@@ -50,11 +50,12 @@ fn parse_fixed_offset(tz: &str) -> Option<FixedOffset> {
 
 #[cfg(feature = "chrono-tz")]
 mod private {
-    use super::*;
+    use core::{fmt::Display, str::FromStr};
+
     use chrono::offset::TimeZone;
     use chrono::{LocalResult, NaiveDate, NaiveDateTime, Offset};
-    use std::fmt::Display;
-    use std::str::FromStr;
+
+    use super::*;
 
     /// An [`Offset`] for [`Tz`]
     #[derive(Debug, Copy, Clone)]
@@ -63,8 +64,8 @@ mod private {
         offset: FixedOffset,
     }
 
-    impl std::fmt::Display for TzOffset {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    impl core::fmt::Display for TzOffset {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             self.offset.fmt(f)
         }
     }
@@ -99,7 +100,7 @@ mod private {
     }
 
     impl Display for Tz {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             match self.0 {
                 TzInner::Timezone(tz) => tz.fmt(f),
                 TzInner::Offset(offset) => offset.fmt(f),
@@ -252,17 +253,19 @@ mod private {
 
 #[cfg(not(feature = "chrono-tz"))]
 mod private {
-    use super::*;
+    use core::str::FromStr;
+
     use chrono::offset::TimeZone;
     use chrono::{LocalResult, NaiveDate, NaiveDateTime, Offset};
-    use std::str::FromStr;
+
+    use super::*;
 
     /// An [`Offset`] for [`Tz`]
     #[derive(Debug, Copy, Clone)]
     pub struct TzOffset(FixedOffset);
 
-    impl std::fmt::Display for TzOffset {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    impl core::fmt::Display for TzOffset {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             self.0.fmt(f)
         }
     }

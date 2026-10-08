@@ -36,6 +36,15 @@
 //! Note that `verbose` is an optional boolean flag that allows to print schema only,
 //! when not provided or print full file metadata when provided.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use clap::Parser;
 use parquet::{
     file::reader::{FileReader, SerializedFileReader},
@@ -66,9 +75,9 @@ fn main() {
             println!("Metadata for file: {}", &filename);
             println!();
             if verbose {
-                print_parquet_metadata(&mut std::io::stdout(), metadata);
+                print_parquet_metadata(&mut crate::io::stdout(), metadata);
             } else {
-                print_file_metadata(&mut std::io::stdout(), metadata.file_metadata());
+                print_file_metadata(&mut crate::io::stdout(), metadata.file_metadata());
             }
         }
     }

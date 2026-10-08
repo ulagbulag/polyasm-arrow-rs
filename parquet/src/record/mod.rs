@@ -17,6 +17,15 @@
 
 //! Contains record-based API for reading Parquet files.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 mod api;
 pub mod reader;
 mod record_reader;

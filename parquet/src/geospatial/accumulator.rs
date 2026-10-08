@@ -17,6 +17,15 @@
 
 //! This module provides implementations and traits for building [`GeospatialStatistics`]
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use std::sync::{Arc, OnceLock};
 
 use crate::{
@@ -241,7 +250,7 @@ mod test {
     #[cfg(feature = "geospatial")]
     #[test]
     fn test_default_accumulator_geospatial_factory() {
-        use std::sync::Arc;
+        use alloc::sync::Arc;
 
         use parquet_geospatial::testing::wkb_point_xy;
 

@@ -17,20 +17,31 @@
 
 //! Converting Parquet schema <--> Arrow schema: [`ArrowSchemaConverter`] and [parquet_to_arrow_schema]
 
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
-use std::collections::HashMap;
-use std::sync::Arc;
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 
+#[cfg(feature = "std")]
 use arrow_ipc::writer;
 use arrow_schema::{DataType, Field, FieldRef, Fields, Schema, TimeUnit};
+use base64::{Engine, prelude::BASE64_STANDARD};
 
-use crate::basic::{
-    ConvertedType, LogicalType, Repetition, TimeUnit as ParquetTimeUnit, Type as PhysicalType,
+use crate::{
+    basic::{
+        ConvertedType, LogicalType, Repetition, TimeUnit as ParquetTimeUnit, Type as PhysicalType,
+    },
+    collections::HashMap,
+    errors::{ParquetError, Result},
+    file::{metadata::KeyValue, properties::WriterProperties},
+    schema::types::{ColumnDescriptor, SchemaDescriptor, Type},
+    util::max_precision_for_bits,
 };
-use crate::errors::{ParquetError, Result};
-use crate::file::{metadata::KeyValue, properties::WriterProperties};
-use crate::schema::types::{ColumnDescriptor, SchemaDescriptor, Type};
 
 mod complex;
 mod extension;
@@ -79,10 +90,19 @@ pub(crate) fn parquet_to_arrow_schema_and_fields(
     virtual_columns: &[FieldRef],
 ) -> Result<(Schema, Option<ParquetField>)> {
     let mut metadata = parse_key_value_metadata(key_value_metadata).unwrap_or_default();
-    let maybe_schema = metadata
-        .remove(super::ARROW_SCHEMA_META_KEY)
-        .map(|value| get_arrow_schema_from_metadata(&value))
-        .transpose()?;
+    let encoded_schema = metadata.remove(super::ARROW_SCHEMA_META_KEY);
+    // The hint is an Arrow IPC message, which only `arrow-ipc` decodes; that
+    // crate is `std`-only, so a `no_std` build derives every field from the
+    // Parquet schema alone and drops the key exactly as a decode would.
+    let maybe_schema: Option<Schema> = cfg_select! {
+        feature = "std" => encoded_schema
+            .map(|value| get_arrow_schema_from_metadata(&value))
+            .transpose()?,
+        _ => {{
+            let _ = encoded_schema;
+            None
+        }}
+    };
 
     // Add the Arrow metadata to the Parquet metadata skipping keys that collide
     if let Some(arrow_schema) = &maybe_schema {
@@ -257,6 +277,7 @@ pub fn parquet_to_arrow_field_levels_with_virtual(
 }
 
 /// Try to convert Arrow schema metadata into a schema
+#[cfg(feature = "std")]
 fn get_arrow_schema_from_metadata(encoded_meta: &str) -> Result<Schema> {
     let decoded = BASE64_STANDARD.decode(encoded_meta);
     match decoded {
@@ -293,6 +314,7 @@ fn get_arrow_schema_from_metadata(encoded_meta: &str) -> Result<Schema> {
 }
 
 /// Encodes the Arrow schema into the IPC format, and base64 encodes it
+#[cfg(feature = "std")]
 pub fn encode_arrow_schema(schema: &Schema) -> String {
     let options = writer::IpcWriteOptions::default();
     let mut dictionary_tracker = writer::DictionaryTracker::new(true);
@@ -317,6 +339,7 @@ pub fn encode_arrow_schema(schema: &Schema) -> String {
 /// If there is an existing Arrow schema metadata, it is replaced.
 ///
 /// [`ARROW_SCHEMA_META_KEY`]: crate::arrow::ARROW_SCHEMA_META_KEY
+#[cfg(feature = "std")]
 pub fn add_encoded_arrow_schema_to_metadata(schema: &Schema, props: &mut WriterProperties) {
     let encoded = encode_arrow_schema(schema);
 
@@ -509,7 +532,7 @@ pub fn parquet_to_arrow_field(parquet_column: &ColumnDescriptor) -> Result<Field
     if hash_map_size == 0 {
         return Ok(ret);
     }
-    ret.set_metadata(HashMap::with_capacity(hash_map_size));
+    ret.set_metadata(crate::collections::map_with_capacity(hash_map_size));
     if basic_info.has_id() {
         ret.metadata_mut().insert(
             PARQUET_FIELD_ID_META_KEY.to_string(),
@@ -524,10 +547,15 @@ pub fn decimal_length_from_precision(precision: u8) -> usize {
     // ceil(digits) = log10(2^(8*n - 1) - 1)
     // 10^ceil(digits) = 2^(8*n - 1) - 1
     // 10^ceil(digits) + 1 = 2^(8*n - 1)
-    // log2(10^ceil(digits) + 1) = (8*n - 1)
-    // log2(10^ceil(digits) + 1) + 1 = 8*n
-    // (log2(10^ceil(a) + 1) + 1) / 8 = n
-    (((10.0_f64.powi(precision as i32) + 1.0).log2() + 1.0) / 8.0).ceil() as usize
+    // The float form of that solve needs `f64::powi`/`log2`, which `no_std`
+    // lacks; the smallest `n` whose own maximum precision reaches `precision`
+    // is the same `n` and is exact for every width.
+    let precision = u32::from(precision);
+    let mut length = 1_usize;
+    while max_precision_for_bits(8 * length as i32) < precision {
+        length += 1;
+    }
+    length
 }
 
 /// Convert an arrow field to a parquet `Type`

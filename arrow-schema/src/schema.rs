@@ -15,11 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::collections::HashMap;
-use std::fmt;
-use std::hash::Hash;
-use std::sync::Arc;
+use alloc::{
+    format,
+    string::{String, ToString},
+    sync::Arc,
+    vec,
+    vec::Vec,
+};
+use core::{fmt, hash::Hash};
 
+use crate::MetadataMap as HashMap;
 use crate::error::ArrowError;
 use crate::field::Field;
 use crate::{DataType, FieldRef, Fields};
@@ -533,7 +538,7 @@ impl fmt::Display for Schema {
 // need to implement `Hash` manually because `HashMap` implement Eq but no `Hash`
 #[allow(clippy::derived_hash_with_manual_eq)]
 impl Hash for Schema {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.fields.hash(state);
 
         // ensure deterministic key order

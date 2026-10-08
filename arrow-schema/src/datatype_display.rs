@@ -15,9 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::DataType;
-use std::fmt::Display;
-use std::{collections::HashMap, fmt};
+use alloc::{format, string::String, vec::Vec};
+use core::{fmt, fmt::Display};
+
+use crate::{DataType, MetadataMap as HashMap};
 
 impl Display for DataType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

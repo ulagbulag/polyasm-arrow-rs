@@ -15,19 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::arrow::array_reader::{ArrayReader, read_records, skip_records};
-use crate::arrow::record_reader::RecordReader;
-use crate::arrow::schema::parquet_to_arrow_field;
-use crate::basic::Type as PhysicalType;
-use crate::column::page::PageIterator;
-use crate::data_type::{DataType, Int96};
-use crate::errors::Result;
-use crate::schema::types::ColumnDescPtr;
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::any::Any;
+
+#[cfg(feature = "std")]
+use arrow_array::builder::PrimitiveDictionaryBuilder;
 use arrow_array::{
     Array, ArrayRef, BooleanArray, Date64Array, Decimal64Array, Decimal128Array, Decimal256Array,
     Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array, PrimitiveArray,
-    UInt8Array, UInt16Array, builder::PrimitiveDictionaryBuilder, cast::AsArray, downcast_integer,
-    types::*,
+    UInt8Array, UInt16Array, cast::AsArray, downcast_integer, types::*,
 };
 use arrow_array::{
     TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
@@ -35,8 +39,19 @@ use arrow_array::{
 };
 use arrow_buffer::{BooleanBuffer, Buffer, NullBuffer, ScalarBuffer, i256};
 use arrow_schema::{DataType as ArrowType, TimeUnit};
-use std::any::Any;
-use std::sync::Arc;
+
+use crate::{
+    arrow::{
+        array_reader::{ArrayReader, read_records, skip_records},
+        record_reader::RecordReader,
+        schema::parquet_to_arrow_field,
+    },
+    basic::Type as PhysicalType,
+    column::page::PageIterator,
+    data_type::{DataType, Int96},
+    errors::{ParquetError, Result},
+    schema::types::ColumnDescPtr,
+};
 
 /// Provides conversion from `Vec<T>` to `Buffer`
 pub trait IntoBuffer {
@@ -104,13 +119,10 @@ where
     Vec<T::T>: IntoBuffer,
 {
     /// Construct primitive array reader.
-    ///
-    /// `batch_size` is used to pre-allocate internal buffers.
     pub fn new(
         pages: Box<dyn PageIterator>,
         column_desc: ColumnDescPtr,
         arrow_type: Option<ArrowType>,
-        batch_size: usize,
     ) -> Result<Self> {
         // Check if Arrow type is specified, else create it from Parquet type
         let data_type = match arrow_type {
@@ -120,7 +132,7 @@ where
                 .clone(),
         };
 
-        let record_reader = RecordReader::<T>::new(column_desc, batch_size);
+        let record_reader = RecordReader::<T>::new(column_desc);
 
         Ok(Self {
             data_type,
@@ -408,6 +420,7 @@ fn coerce_i64(array: &Int64Array, target_type: &ArrowType) -> Result<ArrayRef> {
     })
 }
 
+#[cfg(feature = "std")]
 macro_rules! pack_dictionary_helper {
     ($t:ty, $values:ident) => {
         match $values.data_type() {
@@ -420,13 +433,26 @@ macro_rules! pack_dictionary_helper {
     };
 }
 
+/// Interning the values needs [`PrimitiveDictionaryBuilder`], which `arrow-array`
+/// builds with `std` alone, so a reader without `std` answers with an error.
 fn pack_dictionary(key: &ArrowType, values: &dyn Array) -> Result<ArrayRef> {
-    downcast_integer! {
-        key => (pack_dictionary_helper, values),
-        _ => unreachable!("Invalid key type"),
+    cfg_select! {
+        feature = "std" => {
+            downcast_integer! {
+                key => (pack_dictionary_helper, values),
+                _ => unreachable!("Invalid key type"),
+            }
+        }
+        _ => {
+            let _ = (key, values);
+            Err(nyi_err!(
+                "Reading a column as a dictionary requires the `std` feature"
+            ))
+        }
     }
 }
 
+#[cfg(feature = "std")]
 fn pack_dictionary_impl<K: ArrowDictionaryKeyType, V: ArrowPrimitiveType>(
     values: &PrimitiveArray<V>,
 ) -> Result<ArrayRef> {
@@ -437,9 +463,16 @@ fn pack_dictionary_impl<K: ArrowDictionaryKeyType, V: ArrowPrimitiveType>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use alloc::collections::VecDeque;
+
+    use arrow::datatypes::{
+        ArrowPrimitiveType,
+        DataType::{Date32, Decimal128},
+    };
+    use arrow_array::{Array, Date32Array, PrimitiveArray};
+    use rand::distr::uniform::SampleUniform;
+
     use crate::arrow::array_reader::test_util::EmptyPageIterator;
-    use crate::arrow::arrow_reader::DEFAULT_BATCH_SIZE;
     use crate::basic::Encoding;
     use crate::column::page::Page;
     use crate::data_type::{Int32Type, Int64Type};
@@ -447,12 +480,8 @@ mod tests {
     use crate::schema::types::SchemaDescriptor;
     use crate::util::InMemoryPageIterator;
     use crate::util::test_common::rand_gen::make_pages;
-    use arrow::datatypes::ArrowPrimitiveType;
-    use arrow_array::{Array, Date32Array, PrimitiveArray};
 
-    use arrow::datatypes::DataType::{Date32, Decimal128};
-    use rand::distr::uniform::SampleUniform;
-    use std::collections::VecDeque;
+    use super::*;
 
     #[allow(clippy::too_many_arguments)]
     fn make_column_chunks<T: DataType>(
@@ -514,7 +543,6 @@ mod tests {
             Box::<EmptyPageIterator>::default(),
             schema.column(0),
             None,
-            DEFAULT_BATCH_SIZE,
         )
         .unwrap();
 
@@ -557,13 +585,9 @@ mod tests {
             );
             let page_iterator = InMemoryPageIterator::new(page_lists);
 
-            let mut array_reader = PrimitiveArrayReader::<Int32Type>::new(
-                Box::new(page_iterator),
-                column_desc,
-                None,
-                DEFAULT_BATCH_SIZE,
-            )
-            .unwrap();
+            let mut array_reader =
+                PrimitiveArrayReader::<Int32Type>::new(Box::new(page_iterator), column_desc, None)
+                    .unwrap();
 
             // Read first 50 values, which are all from the first column chunk
             let array = array_reader.next_batch(50).unwrap();
@@ -632,7 +656,6 @@ mod tests {
                     Box::new(page_iterator),
                     column_desc.clone(),
                     None,
-                    DEFAULT_BATCH_SIZE,
                 )
                 .expect("Unable to get array reader");
 
@@ -768,13 +791,9 @@ mod tests {
 
             let page_iterator = InMemoryPageIterator::new(page_lists);
 
-            let mut array_reader = PrimitiveArrayReader::<Int32Type>::new(
-                Box::new(page_iterator),
-                column_desc,
-                None,
-                DEFAULT_BATCH_SIZE,
-            )
-            .unwrap();
+            let mut array_reader =
+                PrimitiveArrayReader::<Int32Type>::new(Box::new(page_iterator), column_desc, None)
+                    .unwrap();
 
             let mut accu_len: usize = 0;
 
@@ -848,13 +867,9 @@ mod tests {
             );
             let page_iterator = InMemoryPageIterator::new(page_lists);
 
-            let mut array_reader = PrimitiveArrayReader::<Int32Type>::new(
-                Box::new(page_iterator),
-                column_desc,
-                None,
-                DEFAULT_BATCH_SIZE,
-            )
-            .unwrap();
+            let mut array_reader =
+                PrimitiveArrayReader::<Int32Type>::new(Box::new(page_iterator), column_desc, None)
+                    .unwrap();
 
             // read data from the reader
             // the data type is decimal(8,2)
@@ -911,13 +926,9 @@ mod tests {
             );
             let page_iterator = InMemoryPageIterator::new(page_lists);
 
-            let mut array_reader = PrimitiveArrayReader::<Int64Type>::new(
-                Box::new(page_iterator),
-                column_desc,
-                None,
-                DEFAULT_BATCH_SIZE,
-            )
-            .unwrap();
+            let mut array_reader =
+                PrimitiveArrayReader::<Int64Type>::new(Box::new(page_iterator), column_desc, None)
+                    .unwrap();
 
             // read data from the reader
             // the data type is decimal(18,4)
@@ -977,13 +988,9 @@ mod tests {
             );
             let page_iterator = InMemoryPageIterator::new(page_lists);
 
-            let mut array_reader = PrimitiveArrayReader::<Int32Type>::new(
-                Box::new(page_iterator),
-                column_desc,
-                None,
-                DEFAULT_BATCH_SIZE,
-            )
-            .unwrap();
+            let mut array_reader =
+                PrimitiveArrayReader::<Int32Type>::new(Box::new(page_iterator), column_desc, None)
+                    .unwrap();
 
             // read data from the reader
             // the data type is date

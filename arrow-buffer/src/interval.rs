@@ -15,8 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use core::ops::Neg;
+
 use crate::arith::derive_arith;
-use std::ops::Neg;
 
 /// Value of an IntervalMonthDayNano array
 ///
