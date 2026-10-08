@@ -17,10 +17,10 @@
 
 //! Defines the low-level [`Allocation`] API for shared memory regions
 
-use std::alloc::Layout;
-use std::fmt::{Debug, Formatter};
-use std::panic::RefUnwindSafe;
-use std::sync::Arc;
+use alloc_crate::sync::Arc;
+use core::alloc::Layout;
+use core::fmt::{Debug, Formatter};
+use core::panic::RefUnwindSafe;
 
 mod alignment;
 
@@ -44,7 +44,7 @@ pub(crate) enum Deallocation {
 }
 
 impl Debug for Deallocation {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
         match self {
             Deallocation::Standard(layout) => {
                 write!(f, "Deallocation::Standard {layout:?}")
@@ -63,8 +63,8 @@ mod tests {
     #[test]
     fn test_size_of_deallocation() {
         assert_eq!(
-            std::mem::size_of::<Deallocation>(),
-            3 * std::mem::size_of::<usize>()
+            core::mem::size_of::<Deallocation>(),
+            3 * core::mem::size_of::<usize>()
         );
     }
 }

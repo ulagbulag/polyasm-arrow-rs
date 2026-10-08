@@ -15,8 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use arrow_buffer::bit_chunk_iterator::UnalignedBitChunk;
-use std::ops::Range;
+use core::ops::Range;
 
 /// Counts the number of set bits in the provided range
 pub fn count_set_bits(bytes: &[u8], range: Range<usize>) -> usize {
@@ -39,16 +48,35 @@ pub fn iter_set_bits_rev(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
     iter.rev().flat_map(move |chunk| {
         let chunk_idx = chunk_end_idx - 64;
         chunk_end_idx = chunk_idx;
-        let mut rev_chunk = chunk.reverse_bits();
-        std::iter::from_fn(move || {
-            if rev_chunk != 0 {
-                let bit_pos = rev_chunk.trailing_zeros();
-                rev_chunk &= rev_chunk - 1;
-                return Some(chunk_idx + (63 - bit_pos as usize));
+        let mut chunk = chunk;
+        core::iter::from_fn(move || {
+            if chunk != 0 {
+                // The most significant set bit, which is the position reversing
+                // the chunk and taking its trailing zeros names. Reading it from
+                // the top directly keeps `u64::reverse_bits` -- whose PolyASM
+                // instantiation carries no body -- off the guest graph.
+                let bit_pos = 63 - chunk.leading_zeros() as usize;
+                chunk &= !(1_u64 << bit_pos);
+                return Some(chunk_idx + bit_pos);
             }
             None
         })
     })
+}
+
+/// Reads at most sixteen `bytes` as one big-endian unsigned integer.
+///
+/// Parquet stores decimals big-endian and `<uN>::from_be_bytes` names that same
+/// order, and a PolyASM guest links only the `core` instantiations `core` itself
+/// uses, which leave out the wide ones. Assembling the value from its bytes
+/// names big endian just as plainly with zero upstream bodies.
+#[inline]
+pub fn u128_from_be_bytes(bytes: &[u8]) -> u128 {
+    let mut value = 0_u128;
+    for byte in bytes {
+        value = (value << 8) | *byte as u128;
+    }
+    value
 }
 
 /// Performs big endian sign extension
@@ -72,7 +100,7 @@ mod tests {
     fn test_bit_fns() {
         let mut rng = rng();
         let mask_length = rng.random_range(1..1024);
-        let bools: Vec<_> = std::iter::from_fn(|| Some(rng.next_u32() & 1 == 0))
+        let bools: Vec<_> = core::iter::from_fn(|| Some(rng.next_u32() & 1 == 0))
             .take(mask_length)
             .collect();
 

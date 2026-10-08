@@ -16,17 +16,21 @@
 // under the License.
 
 use crate::arith::derive_arith;
+// `f64::powi` is an inherent `std` method; under `no_std` the equivalent comes
+// from `num_traits`. Powers of two are exact under both, so results are identical.
 use crate::bigint::div::div_rem;
+use core::cmp::Ordering;
+use core::num::ParseIntError;
+use core::ops::{BitAnd, BitOr, BitXor, Neg, Shl, Shr};
+use core::str::FromStr;
 use num_bigint::BigInt;
+#[cfg(not(feature = "std"))]
+use num_traits::float::FloatCore;
 use num_traits::{
     Bounded, CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedRem, CheckedSub, FromPrimitive,
     Num, One, Signed, ToPrimitive, WrappingAdd, WrappingMul, WrappingNeg, WrappingSub, Zero,
     cast::AsPrimitive,
 };
-use std::cmp::Ordering;
-use std::num::ParseIntError;
-use std::ops::{BitAnd, BitOr, BitXor, Neg, Shl, Shr};
-use std::str::FromStr;
 
 mod div;
 
@@ -40,12 +44,12 @@ impl From<ParseIntError> for ParseI256Error {
     }
 }
 
-impl std::fmt::Display for ParseI256Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for ParseI256Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Failed to parse as i256")
     }
 }
-impl std::error::Error for ParseI256Error {}
+impl core::error::Error for ParseI256Error {}
 
 /// Error returned by i256::DivRem
 enum DivRemError {
@@ -64,14 +68,14 @@ pub struct i256 {
     high: i128,
 }
 
-impl std::fmt::Debug for i256 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for i256 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl std::fmt::Display for i256 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for i256 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", BigInt::from_signed_bytes_le(&self.to_le_bytes()))
     }
 }
@@ -205,8 +209,8 @@ impl i256 {
     pub const fn from_le_bytes(b: [u8; 32]) -> Self {
         let (low, high) = split_array(b);
         Self {
-            high: i128::from_le_bytes(high),
-            low: u128::from_le_bytes(low),
+            high: u128_from_le_bytes(high) as i128,
+            low: u128_from_le_bytes(low),
         }
     }
 
@@ -215,8 +219,8 @@ impl i256 {
     pub const fn from_be_bytes(b: [u8; 32]) -> Self {
         let (high, low) = split_array(b);
         Self {
-            high: i128::from_be_bytes(high),
-            low: u128::from_be_bytes(low),
+            high: u128_from_be_bytes(high) as i128,
+            low: u128_from_be_bytes(low),
         }
     }
 
@@ -271,8 +275,8 @@ impl i256 {
     /// Return the memory representation of this integer as a byte array in little-endian byte order.
     #[inline]
     pub const fn to_le_bytes(self) -> [u8; 32] {
-        let low = self.low.to_le_bytes();
-        let high = self.high.to_le_bytes();
+        let low = u128_to_le_bytes(self.low);
+        let high = u128_to_le_bytes(self.high as u128);
         let mut t = [0; 32];
         let mut i = 0;
         while i != 16 {
@@ -286,8 +290,8 @@ impl i256 {
     /// Return the memory representation of this integer as a byte array in big-endian byte order.
     #[inline]
     pub const fn to_be_bytes(self) -> [u8; 32] {
-        let low = self.low.to_be_bytes();
-        let high = self.high.to_be_bytes();
+        let low = u128_to_be_bytes(self.low);
+        let high = u128_to_be_bytes(self.high as u128);
         let mut t = [0; 32];
         let mut i = 0;
         while i != 16 {
@@ -618,6 +622,71 @@ impl i256 {
 
 /// Temporary workaround due to lack of stable const array slicing
 /// See <https://github.com/rust-lang/rust/issues/90091>
+/// Reads sixteen bytes as one little-endian `u128`.
+///
+/// `u128::from_le_bytes` names the same order, and a PolyASM guest links only
+/// the `core` instantiations `core` itself uses, which leave out the
+/// sixteen-byte ones, so the halves of an `i256` are assembled from their
+/// bytes here and taken apart the same way below.
+#[inline]
+const fn u128_from_le_bytes(bytes: [u8; 16]) -> u128 {
+    let mut value = 0_u128;
+    let mut index = 16;
+    while index != 0 {
+        index -= 1;
+        value = (value << 8) | bytes[index] as u128;
+    }
+    value
+}
+
+/// Reads eight bytes as one little-endian `u64`; see [`u128_from_le_bytes`].
+#[inline]
+const fn u64_from_le_bytes(bytes: [u8; 8]) -> u64 {
+    let mut value = 0_u64;
+    let mut index = 8;
+    while index != 0 {
+        index -= 1;
+        value = (value << 8) | bytes[index] as u64;
+    }
+    value
+}
+
+/// Reads sixteen bytes as one big-endian `u128`; see [`u128_from_le_bytes`].
+#[inline]
+const fn u128_from_be_bytes(bytes: [u8; 16]) -> u128 {
+    let mut value = 0_u128;
+    let mut index = 0;
+    while index != 16 {
+        value = (value << 8) | bytes[index] as u128;
+        index += 1;
+    }
+    value
+}
+
+/// Writes a `u128` as sixteen little-endian bytes; see [`u128_from_le_bytes`].
+#[inline]
+const fn u128_to_le_bytes(value: u128) -> [u8; 16] {
+    let mut bytes = [0_u8; 16];
+    let mut index = 0;
+    while index != 16 {
+        bytes[index] = (value >> (index * 8)) as u8;
+        index += 1;
+    }
+    bytes
+}
+
+/// Writes a `u128` as sixteen big-endian bytes; see [`u128_from_le_bytes`].
+#[inline]
+const fn u128_to_be_bytes(value: u128) -> [u8; 16] {
+    let mut bytes = [0_u8; 16];
+    let mut index = 0;
+    while index != 16 {
+        bytes[index] = (value >> ((15 - index) * 8)) as u8;
+        index += 1;
+    }
+    bytes
+}
+
 const fn split_array<const N: usize, const M: usize>(vals: [u8; N]) -> ([u8; M], [u8; M]) {
     let mut a = [0; M];
     let mut b = [0; M];
@@ -835,9 +904,9 @@ impl ToPrimitive for i256 {
         let high_valid = self.high == -1 || self.high == 0;
 
         if high_negative == low_negative && high_valid {
-            let (low_bytes, high_bytes) = split_array(u128::to_le_bytes(self.low));
-            let high = i64::from_le_bytes(high_bytes);
-            let low = i64::from_le_bytes(low_bytes);
+            let (low_bytes, high_bytes) = split_array(u128_to_le_bytes(self.low));
+            let high = u64_from_le_bytes(high_bytes) as i64;
+            let low = u64_from_le_bytes(low_bytes) as i64;
 
             let high_negative = high < 0;
             let low_negative = low < 0;

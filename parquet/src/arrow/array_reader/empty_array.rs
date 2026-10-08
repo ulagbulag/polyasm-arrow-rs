@@ -15,13 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::arrow::array_reader::ArrayReader;
 use crate::errors::Result;
+use alloc::sync::Arc;
 use arrow_array::{ArrayRef, StructArray};
 use arrow_data::ArrayDataBuilder;
 use arrow_schema::{DataType as ArrowType, Fields};
-use std::any::Any;
-use std::sync::Arc;
+use core::any::Any;
 
 /// Returns an [`ArrayReader`] that yields [`StructArray`] with no columns
 /// but with row counts that correspond to the amount of data in the file

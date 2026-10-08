@@ -15,7 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::{cmp, mem::size_of};
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+use core::{cmp, mem::size_of};
 
 use bytes::Bytes;
 
@@ -46,23 +55,12 @@ pub unsafe trait FromBytes: Sized {
     fn from_le_bytes(bs: Self::Buffer) -> Self;
 }
 
-/// Types that can be decoded from bitpacked representations.
-///
-/// This is implemented for primitive types and bool that can be
-/// directly converted from a u64 value. Types like Int96, ByteArray,
-/// and FixedLenByteArray that cannot be represented in 64 bits do not
-/// implement this trait.
-pub trait FromBitpacked: FromBytes {
-    /// Convert directly from a u64 value by truncation, avoiding byte slice copies.
-    fn from_u64(v: u64) -> Self;
-}
-
 macro_rules! from_le_bytes {
     ($($ty: ty),*) => {
         $(
         // SAFETY: this macro is used for types for which all bit patterns are valid.
         unsafe impl FromBytes for $ty {
-            const BIT_CAPACITY: usize = std::mem::size_of::<$ty>() * 8;
+            const BIT_CAPACITY: usize = core::mem::size_of::<$ty>() * 8;
             type Buffer = [u8; size_of::<Self>()];
             fn try_from_le_slice(b: &[u8]) -> Result<Self> {
                 Ok(Self::from_le_bytes(array_from_slice(b)?))
@@ -71,55 +69,11 @@ macro_rules! from_le_bytes {
                 <$ty>::from_le_bytes(bs)
             }
         }
-        impl FromBitpacked for $ty {
-            #[inline]
-            fn from_u64(v: u64) -> Self {
-                v as Self
-            }
-        }
         )*
     };
 }
 
-from_le_bytes! { u8, u16, u32, u64, i8, i16, i32, i64 }
-
-// SAFETY: all bit patterns are valid for f32 and f64.
-unsafe impl FromBytes for f32 {
-    const BIT_CAPACITY: usize = 32;
-    type Buffer = [u8; 4];
-    fn try_from_le_slice(b: &[u8]) -> Result<Self> {
-        Ok(Self::from_le_bytes(array_from_slice(b)?))
-    }
-    fn from_le_bytes(bs: Self::Buffer) -> Self {
-        f32::from_le_bytes(bs)
-    }
-}
-
-impl FromBitpacked for f32 {
-    #[inline]
-    fn from_u64(v: u64) -> Self {
-        f32::from_bits(v as u32)
-    }
-}
-
-// SAFETY: all bit patterns are valid for f64.
-unsafe impl FromBytes for f64 {
-    const BIT_CAPACITY: usize = 64;
-    type Buffer = [u8; 8];
-    fn try_from_le_slice(b: &[u8]) -> Result<Self> {
-        Ok(Self::from_le_bytes(array_from_slice(b)?))
-    }
-    fn from_le_bytes(bs: Self::Buffer) -> Self {
-        f64::from_le_bytes(bs)
-    }
-}
-
-impl FromBitpacked for f64 {
-    #[inline]
-    fn from_u64(v: u64) -> Self {
-        f64::from_bits(v)
-    }
-}
+from_le_bytes! { u8, u16, u32, u64, i8, i16, i32, i64, f32, f64 }
 
 // SAFETY: the 0000000x bit pattern is always valid for `bool`.
 unsafe impl FromBytes for bool {
@@ -131,13 +85,6 @@ unsafe impl FromBytes for bool {
     }
     fn from_le_bytes(bs: Self::Buffer) -> Self {
         bs[0] != 0
-    }
-}
-
-impl FromBitpacked for bool {
-    #[inline]
-    fn from_u64(v: u64) -> Self {
-        v != 0
     }
 }
 
@@ -201,7 +148,7 @@ pub(crate) fn read_num_bytes<T>(size: usize, src: &[u8]) -> T
 where
     T: FromBytes,
 {
-    debug_assert!(size <= src.len());
+    assert!(size <= src.len());
     let mut buffer = <T as FromBytes>::Buffer::default();
     buffer.as_mut()[..size].copy_from_slice(&src[..size]);
     <T>::from_le_bytes(buffer)
@@ -281,13 +228,6 @@ impl BitWriter {
         self.buffer()
     }
 
-    /// Like `flush_buffer`, but returns mutable access to the buffer.
-    #[inline]
-    pub fn flush_buffer_mut(&mut self) -> &mut [u8] {
-        self.flush();
-        &mut self.buffer
-    }
-
     /// Clears the internal state so the buffer can be reused.
     #[inline]
     pub fn clear(&mut self) {
@@ -314,7 +254,7 @@ impl BitWriter {
     pub fn skip(&mut self, num_bytes: usize) -> usize {
         self.flush();
         let result = self.buffer.len();
-        self.buffer.extend(std::iter::repeat_n(0, num_bytes));
+        self.buffer.extend(core::iter::repeat_n(0, num_bytes));
         result
     }
 
@@ -475,9 +415,9 @@ impl BitReader {
     /// Reads a value of type `T` and of size `num_bits`.
     ///
     /// Returns `None` if there's not enough data available. `Some` otherwise.
-    pub fn get_value<T: FromBitpacked>(&mut self, num_bits: usize) -> Option<T> {
-        debug_assert!(num_bits <= 64);
-        debug_assert!(num_bits <= size_of::<T>() * 8);
+    pub fn get_value<T: FromBytes>(&mut self, num_bits: usize) -> Option<T> {
+        assert!(num_bits <= 64);
+        assert!(num_bits <= size_of::<T>() * 8);
 
         if self.byte_offset * 8 + self.bit_offset + num_bits > self.buffer.len() * 8 {
             return None;
@@ -507,7 +447,8 @@ impl BitReader {
             }
         }
 
-        Some(T::from_u64(v))
+        // This copies the bytes; a zero-copy read is the faster form
+        T::try_from_le_slice(v.as_bytes()).ok()
     }
 
     /// Read multiple values from their packed representation where each element is represented
@@ -518,8 +459,8 @@ impl BitReader {
     /// This function panics if
     /// - `num_bits` is larger than the bit-capacity of `T`
     ///
-    pub fn get_batch<T: FromBitpacked>(&mut self, batch: &mut [T], num_bits: usize) -> usize {
-        debug_assert!(num_bits <= size_of::<T>() * 8);
+    pub fn get_batch<T: FromBytes>(&mut self, batch: &mut [T], num_bits: usize) -> usize {
+        assert!(num_bits <= size_of::<T>() * 8);
 
         let mut values_to_read = batch.len();
         let needed_bits = num_bits * values_to_read;
@@ -551,7 +492,7 @@ impl BitReader {
                 // in which only the lowest T::BIT_CAPACITY bits of T are set are valid,
                 // unpack{8,16,32,64} only set to non0 the lowest num_bits bits, and we
                 // checked that num_bits <= T::BIT_CAPACITY.
-                let out = unsafe { std::slice::from_raw_parts_mut(ptr, batch.len()) };
+                let out = unsafe { core::slice::from_raw_parts_mut(ptr, batch.len()) };
                 while values_to_read - i >= 8 {
                     let out_slice = (&mut out[i..i + 8]).try_into().unwrap();
                     unpack8(&self.buffer[self.byte_offset..], out_slice, num_bits);
@@ -565,7 +506,7 @@ impl BitReader {
                 // in which only the lowest T::BIT_CAPACITY bits of T are set are valid,
                 // unpack{8,16,32,64} only set to non0 the lowest num_bits bits, and we
                 // checked that num_bits <= T::BIT_CAPACITY.
-                let out = unsafe { std::slice::from_raw_parts_mut(ptr, batch.len()) };
+                let out = unsafe { core::slice::from_raw_parts_mut(ptr, batch.len()) };
                 while values_to_read - i >= 16 {
                     let out_slice = (&mut out[i..i + 16]).try_into().unwrap();
                     unpack16(&self.buffer[self.byte_offset..], out_slice, num_bits);
@@ -579,7 +520,7 @@ impl BitReader {
                 // in which only the lowest T::BIT_CAPACITY bits of T are set are valid,
                 // unpack{8,16,32,64} only set to non0 the lowest num_bits bits, and we
                 // checked that num_bits <= T::BIT_CAPACITY.
-                let out = unsafe { std::slice::from_raw_parts_mut(ptr, batch.len()) };
+                let out = unsafe { core::slice::from_raw_parts_mut(ptr, batch.len()) };
                 while values_to_read - i >= 32 {
                     let out_slice = (&mut out[i..i + 32]).try_into().unwrap();
                     unpack32(&self.buffer[self.byte_offset..], out_slice, num_bits);
@@ -593,7 +534,7 @@ impl BitReader {
                 // in which only the lowest T::BIT_CAPACITY bits of T are set are valid,
                 // unpack{8,16,32,64} only set to non0 the lowest num_bits bits, and we
                 // checked that num_bits <= T::BIT_CAPACITY.
-                let out = unsafe { std::slice::from_raw_parts_mut(ptr, batch.len()) };
+                let out = unsafe { core::slice::from_raw_parts_mut(ptr, batch.len()) };
                 while values_to_read - i >= 64 {
                     let out_slice = (&mut out[i..i + 64]).try_into().unwrap();
                     unpack64(&self.buffer[self.byte_offset..], out_slice, num_bits);
@@ -663,7 +604,7 @@ impl BitReader {
     ///
     /// Return the number of values skipped (up to num_values)
     pub fn skip(&mut self, num_values: usize, num_bits: usize) -> usize {
-        debug_assert!(num_bits <= 64);
+        assert!(num_bits <= 64);
 
         let needed_bits = num_bits * num_values;
         let remaining_bits = (self.buffer.len() - self.byte_offset) * 8 - self.bit_offset;
@@ -727,15 +668,9 @@ impl BitReader {
     ///
     /// Returns `None` if there's not enough bytes in the stream. `Some` otherwise.
     pub fn get_vlq_int(&mut self) -> Option<i64> {
-        // Align to byte boundary once, then read bytes directly
-        self.byte_offset = self.get_byte_offset();
-        self.bit_offset = 0;
-
-        let buf = &self.buffer[self.byte_offset..];
         let mut shift = 0;
         let mut v: i64 = 0;
-
-        for (i, &byte) in buf.iter().enumerate() {
+        while let Some(byte) = self.get_aligned::<u8>(1) {
             v |= ((byte & 0x7F) as i64) << shift;
             shift += 7;
             assert!(
@@ -743,7 +678,6 @@ impl BitReader {
                 "Num of bytes exceed MAX_VLQ_BYTE_LEN ({MAX_VLQ_BYTE_LEN})"
             );
             if byte & 0x80 == 0 {
-                self.byte_offset += i + 1;
                 return Some(v);
             }
         }
@@ -791,8 +725,8 @@ mod tests {
     use super::*;
 
     use crate::util::test_common::rand_gen::random_numbers;
+    use core::fmt::Debug;
     use rand::distr::{Distribution, StandardUniform};
-    use std::fmt::Debug;
 
     #[test]
     fn test_ceil() {
@@ -1085,7 +1019,7 @@ mod tests {
 
     fn test_get_batch_helper<T>(total: usize, num_bits: usize)
     where
-        T: FromBitpacked + Default + Clone + Debug + Eq,
+        T: FromBytes + Default + Clone + Debug + Eq,
     {
         assert!(num_bits <= 64);
         let num_bytes = ceil(num_bits, 8);
@@ -1146,7 +1080,7 @@ mod tests {
         assert!(num_bits <= 32);
         assert!(total % 2 == 0);
 
-        let aligned_value_byte_width = std::mem::size_of::<T>();
+        let aligned_value_byte_width = core::mem::size_of::<T>();
         let value_byte_width = ceil(num_bits, 8);
         let mut writer =
             BitWriter::new((total / 2) * (aligned_value_byte_width + value_byte_width));

@@ -19,11 +19,11 @@
 
 use crate::builder::NullBuilder;
 use crate::{Array, ArrayRef};
+use alloc::sync::Arc;
 use arrow_buffer::buffer::NullBuffer;
 use arrow_data::{ArrayData, ArrayDataBuilder};
 use arrow_schema::DataType;
-use std::any::Any;
-use std::sync::Arc;
+use core::any::Any;
 
 /// An array of [null values](https://arrow.apache.org/docs/format/Columnar.html#null-layout)
 ///
@@ -131,7 +131,7 @@ unsafe impl Array for NullArray {
     }
 
     fn get_array_memory_size(&self) -> usize {
-        std::mem::size_of::<Self>()
+        core::mem::size_of::<Self>()
     }
 
     #[cfg(feature = "pool")]
@@ -165,8 +165,8 @@ impl From<NullArray> for ArrayData {
     }
 }
 
-impl std::fmt::Debug for NullArray {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl core::fmt::Debug for NullArray {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "NullArray({})", self.len())
     }
 }

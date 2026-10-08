@@ -18,8 +18,12 @@
 use arrow_buffer::{ArrowNativeType, IntervalDayTime, IntervalMonthDayNano, i256};
 use arrow_schema::ArrowError;
 use half::f16;
+// `ComplexFloat` (which supplies `powi` for the float types) is gated behind
+// num-complex's `std`/`libm` features, so the exponentiation operations it backs
+// are only available under `std`.
+use core::cmp::Ordering;
+#[cfg(feature = "std")]
 use num_complex::ComplexFloat;
-use std::cmp::Ordering;
 
 /// Trait for [`ArrowNativeType`] that adds checked and unchecked arithmetic operations,
 /// and totally ordered comparison operations
@@ -92,9 +96,11 @@ pub trait ArrowNativeTypeOp: ArrowNativeType {
     fn neg_wrapping(self) -> Self;
 
     /// Checked exponentiation operation
+    #[cfg(feature = "std")]
     fn pow_checked(self, exp: u32) -> Result<Self, ArrowError>;
 
     /// Wrapping exponentiation operation
+    #[cfg(feature = "std")]
     fn pow_wrapping(self, exp: u32) -> Self;
 
     /// Returns true if zero else false
@@ -241,6 +247,7 @@ macro_rules! native_type_op {
                 })
             }
 
+            #[cfg(feature = "std")]
             #[inline]
             fn pow_checked(self, exp: u32) -> Result<Self, ArrowError> {
                 self.checked_pow(exp).ok_or_else(|| {
@@ -251,6 +258,7 @@ macro_rules! native_type_op {
                 })
             }
 
+            #[cfg(feature = "std")]
             #[inline]
             fn pow_wrapping(self, exp: u32) -> Self {
                 self.wrapping_pow(exp)
@@ -373,11 +381,13 @@ macro_rules! native_type_float_op {
                 -self
             }
 
+            #[cfg(feature = "std")]
             #[inline]
             fn pow_checked(self, exp: u32) -> Result<Self, ArrowError> {
                 Ok(self.powi(exp as i32))
             }
 
+            #[cfg(feature = "std")]
             #[inline]
             fn pow_wrapping(self, exp: u32) -> Self {
                 self.powi(exp as i32)
@@ -422,13 +432,13 @@ native_type_float_op!(
         // Need to allow in clippy because
         // current MSRV (Minimum Supported Rust Version) is `1.85.0` but this item is stable since `1.87.0`
         #[allow(unnecessary_transmutes)]
-        std::mem::transmute(-1_i32)
+        core::mem::transmute(-1_i32)
     },
     unsafe {
         // Need to allow in clippy because
         // current MSRV (Minimum Supported Rust Version) is `1.85.0` but this item is stable since `1.87.0`
         #[allow(unnecessary_transmutes)]
-        std::mem::transmute(i32::MAX)
+        core::mem::transmute(i32::MAX)
     }
 );
 native_type_float_op!(
@@ -439,13 +449,13 @@ native_type_float_op!(
         // Need to allow in clippy because
         // current MSRV (Minimum Supported Rust Version) is `1.85.0` but this item is stable since `1.87.0`
         #[allow(unnecessary_transmutes)]
-        std::mem::transmute(-1_i64)
+        core::mem::transmute(-1_i64)
     },
     unsafe {
         // Need to allow in clippy because
         // current MSRV (Minimum Supported Rust Version) is `1.85.0` but this item is stable since `1.87.0`
         #[allow(unnecessary_transmutes)]
-        std::mem::transmute(i64::MAX)
+        core::mem::transmute(i64::MAX)
     }
 );
 

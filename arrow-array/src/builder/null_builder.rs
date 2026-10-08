@@ -17,10 +17,11 @@
 
 use crate::builder::ArrayBuilder;
 use crate::{ArrayRef, NullArray};
+use alloc::boxed::Box;
+use alloc::sync::Arc;
 use arrow_data::ArrayData;
 use arrow_schema::DataType;
-use std::any::Any;
-use std::sync::Arc;
+use core::any::Any;
 
 /// Builder for [`NullArray`]
 ///

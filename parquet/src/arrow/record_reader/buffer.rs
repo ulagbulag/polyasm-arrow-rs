@@ -15,16 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::arrow::buffer::bit_util::iter_set_bits_rev;
 
 /// A buffer that supports padding with nulls
-pub trait ValuesBuffer {
-    /// Create a new buffer with capacity for at least `capacity` elements
-    ///
-    /// This allows pre-allocating buffers to avoid reallocations during reading,
-    /// improving performance when the number of values is known in advance.
-    fn with_capacity(capacity: usize) -> Self;
-
+pub trait ValuesBuffer: Default {
     /// If a column contains nulls, more level data may be read than value data, as null
     /// values are not encoded. Therefore, first the levels data is read, the null count
     /// determined, and then the corresponding number of values read to a [`ValuesBuffer`].
@@ -49,10 +52,6 @@ pub trait ValuesBuffer {
 }
 
 impl<T: Copy + Default> ValuesBuffer for Vec<T> {
-    fn with_capacity(capacity: usize) -> Self {
-        Vec::with_capacity(capacity)
-    }
-
     fn pad_nulls(
         &mut self,
         read_offset: usize,

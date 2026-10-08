@@ -17,6 +17,15 @@
 
 //! Contains column reader API.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use bytes::Bytes;
 
 use super::page::{Page, PageReader};
@@ -568,7 +577,7 @@ fn parse_v1_level(
 ) -> Result<(usize, Bytes)> {
     match encoding {
         Encoding::RLE => {
-            let i32_size = std::mem::size_of::<i32>();
+            let i32_size = core::mem::size_of::<i32>();
             if i32_size <= buf.len() {
                 let data_size = read_num_bytes::<i32>(i32_size, buf.as_ref()) as usize;
                 let end = i32_size
@@ -1401,12 +1410,12 @@ mod tests {
         // Helper: build a DataPage v2 for this list column.
         let make_v2_page =
             |rep_levels: &[i16], def_levels: &[i16], values: &[i32], num_rows: u32| -> Page {
-                let mut rep_enc = LevelEncoder::v2_streaming(max_rep_level);
-                rep_enc.put_with_observer(rep_levels, |_, _| {});
+                let mut rep_enc = LevelEncoder::v2(max_rep_level, rep_levels.len());
+                rep_enc.put(rep_levels);
                 let rep_bytes = rep_enc.consume();
 
-                let mut def_enc = LevelEncoder::v2_streaming(max_def_level);
-                def_enc.put_with_observer(def_levels, |_, _| {});
+                let mut def_enc = LevelEncoder::v2(max_def_level, def_levels.len());
+                def_enc.put(def_levels);
                 let def_bytes = def_enc.consume();
 
                 let val_bytes: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();

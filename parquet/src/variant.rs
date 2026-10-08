@@ -123,7 +123,7 @@
 //! // the VariantType extension type
 //! let schema = reader.schema();
 //! let field = schema.field_with_name("var")?;
-//! assert!(field.has_valid_extension_type::<VariantType>());
+//! assert!(field.try_extension_type::<VariantType>().is_ok());
 //!
 //! // The reader will yield RecordBatches with a StructArray
 //! // to convert them to VariantArray, use VariantArray::try_new
@@ -137,6 +137,15 @@
 //! # Ok(())
 //! # }
 //! ```
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 pub use parquet_variant::*;
 pub use parquet_variant_compute::*;
 
@@ -146,6 +155,7 @@ mod tests {
     use crate::arrow::arrow_reader::ArrowReaderBuilder;
     use crate::file::metadata::{ParquetMetaData, ParquetMetaDataReader};
     use crate::file::reader::ChunkReader;
+    use alloc::sync::Arc;
     use arrow::util::test_util::parquet_test_data;
     use arrow_array::{ArrayRef, RecordBatch};
     use arrow_schema::Schema;
@@ -153,7 +163,6 @@ mod tests {
     use parquet_variant::{Variant, VariantBuilderExt};
     use parquet_variant_compute::{VariantArray, VariantArrayBuilder, VariantType};
     use std::path::PathBuf;
-    use std::sync::Arc;
 
     #[test]
     fn roundtrip_basic() {
@@ -285,7 +294,9 @@ mod tests {
         assert_eq!(metadata_value, "arrow.parquet.variant");
 
         // verify that `VariantType` also correctly finds the metadata
-        assert!(field.has_valid_extension_type::<VariantType>());
+        field
+            .try_extension_type::<VariantType>()
+            .expect("VariantExtensionType should be readable");
     }
 
     /// Read the specified test case filename from parquet-testing

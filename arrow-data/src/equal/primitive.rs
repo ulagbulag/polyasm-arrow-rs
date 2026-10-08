@@ -17,7 +17,7 @@
 
 use crate::bit_iterator::BitSliceIterator;
 use crate::contains_nulls;
-use std::mem::size_of;
+use core::mem::size_of;
 
 use crate::data::ArrayData;
 

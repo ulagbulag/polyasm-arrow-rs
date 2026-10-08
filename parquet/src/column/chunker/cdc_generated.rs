@@ -15,6 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 #[rustfmt::skip]
 pub(crate) const NUM_GEARHASH_TABLES: usize = 8;
 

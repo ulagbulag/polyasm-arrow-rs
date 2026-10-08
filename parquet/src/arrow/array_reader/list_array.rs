@@ -15,9 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::arrow::array_reader::ArrayReader;
 use crate::errors::ParquetError;
 use crate::errors::Result;
+use alloc::sync::Arc;
 use arrow_array::{
     Array, ArrayRef, GenericListArray, OffsetSizeTrait, builder::BooleanBufferBuilder,
     new_empty_array,
@@ -26,10 +36,9 @@ use arrow_buffer::Buffer;
 use arrow_buffer::ToByteSlice;
 use arrow_data::{ArrayData, transform::MutableArrayData};
 use arrow_schema::DataType as ArrowType;
-use std::any::Any;
-use std::cmp::Ordering;
-use std::marker::PhantomData;
-use std::sync::Arc;
+use core::any::Any;
+use core::cmp::Ordering;
+use core::marker::PhantomData;
 
 /// Implementation of list array reader.
 pub struct ListArrayReader<OffsetSize: OffsetSizeTrait> {
@@ -248,8 +257,7 @@ mod tests {
     use super::*;
     use crate::arrow::array_reader::ArrayReaderBuilder;
     use crate::arrow::array_reader::list_array::ListArrayReader;
-    use crate::arrow::array_reader::test_util::make_int32_page_reader;
-    use crate::arrow::arrow_reader::DEFAULT_BATCH_SIZE;
+    use crate::arrow::array_reader::test_util::InMemoryArrayReader;
     use crate::arrow::arrow_reader::metrics::ArrowReaderMetrics;
     use crate::arrow::schema::parquet_to_arrow_schema_and_fields;
     use crate::arrow::{ArrowWriter, ProjectionMask, parquet_to_arrow_schema};
@@ -257,11 +265,11 @@ mod tests {
     use crate::file::reader::{FileReader, SerializedFileReader};
     use crate::schema::parser::parse_message_type;
     use crate::schema::types::SchemaDescriptor;
-    use arrow::datatypes::{Field, Int32Type};
+    use alloc::sync::Arc;
+    use arrow::datatypes::{Field, Int32Type as ArrowInt32, Int32Type};
     use arrow_array::{Array, PrimitiveArray};
     use arrow_data::ArrayDataBuilder;
     use arrow_schema::Fields;
-    use std::sync::Arc;
 
     fn list_type<OffsetSize: OffsetSizeTrait>(
         data_type: ArrowType,
@@ -354,15 +362,36 @@ mod tests {
 
         let expected = GenericListArray::<OffsetSize>::from(l1);
 
-        let item_array_reader = make_int32_page_reader(
-            &[1, 4, 7, 1, 2, 3, 4, 6, 11],
-            &[6, 5, 3, 6, 4, 2, 6, 4, 6, 6, 6, 6, 5, 6, 3, 0, 1, 6],
-            &[0, 3, 2, 2, 2, 1, 1, 1, 1, 3, 3, 2, 3, 3, 2, 0, 0, 0],
-            6,
-            3,
+        let values = Arc::new(PrimitiveArray::<Int32Type>::from(vec![
+            Some(1),
+            None,
+            None,
+            Some(4),
+            None,
+            None,
+            Some(7),
+            None,
+            Some(1),
+            Some(2),
+            Some(3),
+            Some(4),
+            None,
+            Some(6),
+            None,
+            None,
+            None,
+            Some(11),
+        ]));
+
+        let item_array_reader = InMemoryArrayReader::new(
+            ArrowType::Int32,
+            values,
+            Some(vec![6, 5, 3, 6, 4, 2, 6, 4, 6, 6, 6, 6, 5, 6, 3, 0, 1, 6]),
+            Some(vec![0, 3, 2, 2, 2, 1, 1, 1, 1, 3, 3, 2, 3, 3, 2, 0, 0, 0]),
         );
 
-        let l3 = ListArrayReader::<OffsetSize>::new(item_array_reader, l3_type, 5, 3, true);
+        let l3 =
+            ListArrayReader::<OffsetSize>::new(Box::new(item_array_reader), l3_type, 5, 3, true);
 
         let l2 = ListArrayReader::<OffsetSize>::new(Box::new(l3), l2_type, 3, 2, false);
 
@@ -390,16 +419,28 @@ mod tests {
                 Some(vec![None, Some(1)]),
             ]);
 
-        let item_array_reader = make_int32_page_reader(
-            &[1, 2, 3, 4, 1],
-            &[2, 1, 2, 0, 2, 2, 0, 0, 1, 2],
-            &[0, 1, 1, 0, 0, 1, 0, 0, 0, 1],
-            2,
-            1,
+        let array = Arc::new(PrimitiveArray::<ArrowInt32>::from(vec![
+            Some(1),
+            None,
+            Some(2),
+            None,
+            Some(3),
+            Some(4),
+            None,
+            None,
+            None,
+            Some(1),
+        ]));
+
+        let item_array_reader = InMemoryArrayReader::new(
+            ArrowType::Int32,
+            array,
+            Some(vec![2, 1, 2, 0, 2, 2, 0, 0, 1, 2]),
+            Some(vec![0, 1, 1, 0, 0, 1, 0, 0, 0, 1]),
         );
 
         let mut list_array_reader = ListArrayReader::<OffsetSize>::new(
-            item_array_reader,
+            Box::new(item_array_reader),
             list_type::<OffsetSize>(ArrowType::Int32, true),
             1,
             1,
@@ -427,16 +468,31 @@ mod tests {
                 Some(vec![None, Some(1)]),
             ]);
 
-        let item_array_reader = make_int32_page_reader(
-            &[1, 2, 3, 4, 1],
-            &[3, 2, 3, 0, 1, 3, 3, 1, 1, 0, 1, 2, 3],
-            &[0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
-            3,
-            1,
+        let array = Arc::new(PrimitiveArray::<ArrowInt32>::from(vec![
+            Some(1),
+            None,
+            Some(2),
+            None,
+            None,
+            Some(3),
+            Some(4),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(1),
+        ]));
+
+        let item_array_reader = InMemoryArrayReader::new(
+            ArrowType::Int32,
+            array,
+            Some(vec![3, 2, 3, 0, 1, 3, 3, 1, 1, 0, 1, 2, 3]),
+            Some(vec![0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1]),
         );
 
         let mut list_array_reader = ListArrayReader::<OffsetSize>::new(
-            item_array_reader,
+            Box::new(item_array_reader),
             list_type::<OffsetSize>(ArrowType::Int32, true),
             2,
             1,
@@ -520,7 +576,6 @@ mod tests {
 
         let metrics = ArrowReaderMetrics::disabled();
         let mut array_reader = ArrayReaderBuilder::new(&file_reader, &metrics)
-            .with_batch_size(DEFAULT_BATCH_SIZE)
             .build_array_reader(fields.as_ref(), &mask)
             .unwrap();
 

@@ -16,23 +16,32 @@
 // under the License.
 
 use crate::array::print_long_array;
+#[cfg(feature = "std")]
 use crate::builder::{ArrayBuilder, GenericByteViewBuilder};
 use crate::iterator::ArrayIter;
 use crate::types::bytes::ByteArrayNativeType;
 use crate::types::{BinaryViewType, ByteViewType, StringViewType};
-use crate::{Array, ArrayAccessor, ArrayRef, GenericByteArray, OffsetSizeTrait, Scalar};
-use arrow_buffer::{ArrowNativeType, Buffer, NullBuffer, ScalarBuffer};
+use crate::{Array, ArrayAccessor, ArrayRef};
+#[cfg(feature = "std")]
+use crate::{GenericByteArray, OffsetSizeTrait, Scalar};
+use alloc::sync::Arc;
+#[cfg(feature = "std")]
+use arrow_buffer::ArrowNativeType;
+use arrow_buffer::{Buffer, NullBuffer, ScalarBuffer};
 use arrow_data::{ArrayData, ArrayDataBuilder, ByteView, MAX_INLINE_VIEW_LEN};
 use arrow_schema::{ArrowError, DataType};
+use core::any::Any;
+use core::cmp::Ordering;
+use core::fmt::Debug;
+use core::marker::PhantomData;
+#[cfg(feature = "std")]
 use core::str;
+#[cfg(feature = "std")]
 use num_traits::ToPrimitive;
-use std::any::Any;
-use std::cmp::Ordering;
-use std::fmt::Debug;
-use std::marker::PhantomData;
-use std::sync::Arc;
 
+#[cfg(feature = "std")]
 use super::ByteArrayType;
+use alloc::vec::Vec;
 
 /// [Variable-size Binary View Layout]: An array of variable length bytes views.
 ///
@@ -271,11 +280,13 @@ impl<T: ByteViewType + ?Sized> GenericByteViewArray<T> {
     }
 
     /// Create a new [`Scalar`] from `value`
+    #[cfg(feature = "std")]
     pub fn new_scalar(value: impl AsRef<T::Native>) -> Scalar<Self> {
-        Scalar::new(Self::from_iter_values(std::iter::once(value)))
+        Scalar::new(Self::from_iter_values(core::iter::once(value)))
     }
 
     /// Creates a [`GenericByteViewArray`] based on an iterator of values without nulls
+    #[cfg(feature = "std")]
     pub fn from_iter_values<Ptr, I>(iter: I) -> Self
     where
         Ptr: AsRef<T::Native>,
@@ -357,7 +368,7 @@ impl<T: ByteViewType + ?Sized> GenericByteViewArray<T> {
     pub unsafe fn inline_value(view: &u128, len: usize) -> &[u8] {
         debug_assert!(len <= MAX_INLINE_VIEW_LEN as usize);
         unsafe {
-            std::slice::from_raw_parts((view as *const u128 as *const u8).wrapping_add(4), len)
+            core::slice::from_raw_parts((view as *const u128 as *const u8).wrapping_add(4), len)
         }
     }
 
@@ -670,37 +681,6 @@ impl<T: ByteViewType + ?Sized> GenericByteViewArray<T> {
         }
     }
 
-    /// Returns the total number of bytes of all non-null values in this array.
-    ///
-    /// Unlike [`Self::total_buffer_bytes_used`], this method includes inlined strings
-    /// (those with length ≤ [`MAX_INLINE_VIEW_LEN`]), making it suitable as a
-    /// capacity hint when pre-allocating output buffers.
-    ///
-    /// Null values are excluded from the sum.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use arrow_array::StringViewArray;
-    /// let array = StringViewArray::from_iter(vec![
-    ///     Some("hello"),   // 5 bytes, inlined
-    ///     None,            // excluded
-    ///     Some("large payload over 12 bytes"),  // 27 bytes, non-inlined
-    /// ]);
-    /// assert_eq!(array.total_bytes_len(), 5 + 27);
-    /// ```
-    pub fn total_bytes_len(&self) -> usize {
-        match self.nulls() {
-            None => self.views().iter().map(|v| (*v as u32) as usize).sum(),
-            Some(nulls) => self
-                .views()
-                .iter()
-                .zip(nulls.iter())
-                .map(|(v, is_valid)| if is_valid { (*v as u32) as usize } else { 0 })
-                .sum(),
-        }
-    }
-
     /// Returns the total number of bytes used by all non inlined views in all
     /// buffers.
     ///
@@ -842,10 +822,10 @@ impl<T: ByteViewType + ?Sized> GenericByteViewArray<T> {
 }
 
 impl<T: ByteViewType + ?Sized> Debug for GenericByteViewArray<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "{}ViewArray\n[\n", T::PREFIX)?;
         print_long_array(self, f, |array, index, f| {
-            std::fmt::Debug::fmt(&array.value(index), f)
+            core::fmt::Debug::fmt(&array.value(index), f)
         })?;
         write!(f, "]")
     }
@@ -926,7 +906,7 @@ unsafe impl<T: ByteViewType + ?Sized> Array for GenericByteViewArray<T> {
     }
 
     fn get_array_memory_size(&self) -> usize {
-        std::mem::size_of::<Self>() + self.get_buffer_memory_size()
+        core::mem::size_of::<Self>() + self.get_buffer_memory_size()
     }
 
     #[cfg(feature = "pool")]
@@ -994,6 +974,7 @@ impl<T: ByteViewType + ?Sized> From<ArrayData> for GenericByteViewArray<T> {
 /// directly into the existing buffer)
 ///
 /// [`StringArray`]: crate::StringArray
+#[cfg(feature = "std")]
 impl<FROM, V> From<&GenericByteArray<FROM>> for GenericByteViewArray<V>
 where
     FROM: ByteArrayType,
@@ -1056,6 +1037,7 @@ impl<T: ByteViewType + ?Sized> From<GenericByteViewArray<T>> for ArrayData {
     }
 }
 
+#[cfg(feature = "std")]
 impl<'a, Ptr, T> FromIterator<&'a Option<Ptr>> for GenericByteViewArray<T>
 where
     Ptr: AsRef<T::Native> + 'a,
@@ -1068,6 +1050,7 @@ where
     }
 }
 
+#[cfg(feature = "std")]
 impl<Ptr, T: ByteViewType + ?Sized> FromIterator<Option<Ptr>> for GenericByteViewArray<T>
 where
     Ptr: AsRef<T::Native>,
@@ -1109,12 +1092,14 @@ impl BinaryViewArray {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<Vec<&[u8]>> for BinaryViewArray {
     fn from(v: Vec<&[u8]>) -> Self {
         Self::from_iter_values(v)
     }
 }
 
+#[cfg(feature = "std")]
 impl From<Vec<Option<&[u8]>>> for BinaryViewArray {
     fn from(v: Vec<Option<&[u8]>>) -> Self {
         v.into_iter().collect()
@@ -1155,24 +1140,28 @@ impl StringViewArray {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<Vec<&str>> for StringViewArray {
     fn from(v: Vec<&str>) -> Self {
         Self::from_iter_values(v)
     }
 }
 
+#[cfg(feature = "std")]
 impl From<Vec<Option<&str>>> for StringViewArray {
     fn from(v: Vec<Option<&str>>) -> Self {
         v.into_iter().collect()
     }
 }
 
+#[cfg(feature = "std")]
 impl From<Vec<String>> for StringViewArray {
     fn from(v: Vec<String>) -> Self {
         Self::from_iter_values(v)
     }
 }
 
+#[cfg(feature = "std")]
 impl From<Vec<Option<String>>> for StringViewArray {
     fn from(v: Vec<Option<String>>) -> Self {
         v.into_iter().collect()
@@ -1189,9 +1178,9 @@ mod tests {
     use arrow_buffer::{Buffer, NullBuffer, ScalarBuffer};
     use arrow_data::{ArrayDataBuilder, ByteView, MAX_INLINE_VIEW_LEN};
     use arrow_schema::DataType;
+    use core::str::from_utf8;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
-    use std::str::from_utf8;
 
     const BLOCK_SIZE: u32 = 8;
 
@@ -1839,42 +1828,5 @@ mod tests {
         assert!(from_utf8(array.value(1)).is_err()); // value 1 is invalid utf8
         assert!(from_utf8(array.value(2)).is_ok());
         array
-    }
-
-    #[test]
-    fn test_total_bytes_len() {
-        // inlined: "hello"=5, "world"=5, "lulu"=4 → 14
-        // non-inlined: "large payload over 12 bytes"=27
-        // null: should not count
-        let mut builder = StringViewBuilder::new();
-        builder.append_value("hello");
-        builder.append_value("world");
-        builder.append_value("lulu");
-        builder.append_null();
-        builder.append_value("large payload over 12 bytes");
-        let array = builder.finish();
-        assert_eq!(array.total_bytes_len(), 5 + 5 + 4 + 27);
-    }
-
-    #[test]
-    fn test_total_bytes_len_empty() {
-        let array = StringViewArray::from_iter::<Vec<Option<&str>>>(vec![]);
-        assert_eq!(array.total_bytes_len(), 0);
-    }
-
-    #[test]
-    fn test_total_bytes_len_all_nulls() {
-        let array = StringViewArray::new_null(5);
-        assert_eq!(array.total_bytes_len(), 0);
-    }
-
-    #[test]
-    fn test_total_bytes_len_binary_view() {
-        let array = BinaryViewArray::from_iter(vec![
-            Some(b"hi".as_ref()),
-            None,
-            Some(b"large payload over 12 bytes".as_ref()),
-        ]);
-        assert_eq!(array.total_bytes_len(), 2 + 27);
     }
 }

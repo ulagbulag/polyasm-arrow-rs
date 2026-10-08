@@ -19,9 +19,10 @@ use crate::alloc::Deallocation;
 use crate::buffer::Buffer;
 use crate::native::ArrowNativeType;
 use crate::{BufferBuilder, MutableBuffer, OffsetBuffer};
-use std::fmt::Formatter;
-use std::marker::PhantomData;
-use std::ops::Deref;
+use alloc_crate::vec::Vec;
+use core::fmt::Formatter;
+use core::marker::PhantomData;
+use core::ops::Deref;
 
 /// A strongly-typed [`Buffer`] supporting zero-copy cloning and slicing
 ///
@@ -69,8 +70,8 @@ pub struct ScalarBuffer<T: ArrowNativeType> {
     phantom: PhantomData<T>,
 }
 
-impl<T: ArrowNativeType> std::fmt::Debug for ScalarBuffer<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl<T: ArrowNativeType> core::fmt::Debug for ScalarBuffer<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("ScalarBuffer").field(&self.as_ref()).finish()
     }
 }
@@ -87,7 +88,7 @@ impl<T: ArrowNativeType> ScalarBuffer<T> {
     /// * `buffer` is not aligned to a multiple of `std::mem::align_of::<T>`
     /// * `bytes` is not large enough for the requested slice
     pub fn new(buffer: Buffer, offset: usize, len: usize) -> Self {
-        let size = std::mem::size_of::<T>();
+        let size = core::mem::size_of::<T>();
         let byte_offset = offset.checked_mul(size).expect("offset overflow");
         let byte_len = len.checked_mul(size).expect("length overflow");
         buffer.slice_with_length(byte_offset, byte_len).into()
@@ -144,7 +145,7 @@ impl<T: ArrowNativeType> ScalarBuffer<T> {
 
     /// Returns the number of elements in the buffer
     pub fn len(&self) -> usize {
-        self.buffer.len() / std::mem::size_of::<T>()
+        self.buffer.len() / core::mem::size_of::<T>()
     }
 
     /// Returns if the buffer is empty
@@ -160,9 +161,9 @@ impl<T: ArrowNativeType> Deref for ScalarBuffer<T> {
     fn deref(&self) -> &Self::Target {
         // SAFETY: Verified alignment in From<Buffer>
         unsafe {
-            std::slice::from_raw_parts(
+            core::slice::from_raw_parts(
                 self.buffer.as_ptr() as *const T,
-                self.buffer.len() / std::mem::size_of::<T>(),
+                self.buffer.len() / core::mem::size_of::<T>(),
             )
         }
     }
@@ -183,7 +184,7 @@ impl<T: ArrowNativeType> From<MutableBuffer> for ScalarBuffer<T> {
 
 impl<T: ArrowNativeType> From<Buffer> for ScalarBuffer<T> {
     fn from(buffer: Buffer) -> Self {
-        let align = std::mem::align_of::<T>();
+        let align = core::mem::align_of::<T>();
         let is_aligned = buffer.as_ptr().align_offset(align) == 0;
 
         match buffer.deallocation() {
@@ -244,7 +245,7 @@ impl<T: ArrowNativeType> FromIterator<T> for ScalarBuffer<T> {
 
 impl<'a, T: ArrowNativeType> IntoIterator for &'a ScalarBuffer<T> {
     type Item = &'a T;
-    type IntoIter = std::slice::Iter<'a, T>;
+    type IntoIter = core::slice::Iter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.as_ref().iter()

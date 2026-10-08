@@ -17,6 +17,15 @@
 
 //! Utilities to traverse against various parquet type.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::basic::{ConvertedType, Repetition};
 use crate::errors::ParquetError::General;
 use crate::errors::Result;
@@ -131,7 +140,7 @@ mod tests {
     use crate::errors::Result;
     use crate::schema::parser::parse_message_type;
     use crate::schema::types::TypePtr;
-    use std::sync::Arc;
+    use alloc::sync::Arc;
 
     struct TestVisitorContext {}
     struct TestVisitor {

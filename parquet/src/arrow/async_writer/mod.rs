@@ -55,6 +55,15 @@
 //!
 //! [`object_store`] provides it's native implementation of [`AsyncFileWriter`] by [`ParquetObjectWriter`].
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 #[cfg(feature = "object_store")]
 mod store;
 #[cfg(feature = "object_store")]
@@ -72,9 +81,9 @@ use crate::{
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use bytes::Bytes;
+use core::mem;
 use futures::FutureExt;
 use futures::future::BoxFuture;
-use std::mem;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 /// The asynchronous interface used by [`AsyncArrowWriter`] to write parquet files.
@@ -295,10 +304,10 @@ impl<W: AsyncFileWriter> AsyncArrowWriter<W> {
 #[cfg(test)]
 mod tests {
     use crate::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
+    use alloc::sync::Arc;
     use arrow::datatypes::{DataType, Field, Schema};
     use arrow_array::{ArrayRef, BinaryArray, Int32Array, Int64Array, RecordBatchReader};
     use bytes::Bytes;
-    use std::sync::Arc;
 
     use super::*;
 

@@ -18,6 +18,7 @@
 use crate::bit_iterator::{BitIndexIterator, BitIterator, BitSliceIterator};
 use crate::buffer::BooleanBuffer;
 use crate::{Buffer, MutableBuffer};
+use alloc_crate::vec::Vec;
 
 /// A [`BooleanBuffer`] used to encode validity (null values) for Arrow arrays
 ///
@@ -303,8 +304,8 @@ mod tests {
     fn test_size() {
         // This tests that the niche optimisation eliminates the overhead of an option
         assert_eq!(
-            std::mem::size_of::<NullBuffer>(),
-            std::mem::size_of::<Option<NullBuffer>>()
+            core::mem::size_of::<NullBuffer>(),
+            core::mem::size_of::<Option<NullBuffer>>()
         );
     }
 

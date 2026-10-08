@@ -17,6 +17,15 @@
 
 //! Logic for reading data into arrow buffers
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 pub mod bit_util;
 pub mod dictionary_buffer;
 pub mod offset_buffer;

@@ -15,10 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::str::FromStr;
-use std::sync::Arc;
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+#[cfg(feature = "std")]
+use core::str::FromStr;
 
-use crate::{ArrowError, Field, FieldRef, Fields, UnionFields};
+#[cfg(feature = "std")]
+use crate::ArrowError;
+use crate::{Field, FieldRef, Fields, UnionFields};
 
 /// Datatypes supported by this implementation of Apache Arrow.
 ///
@@ -450,8 +454,8 @@ pub enum TimeUnit {
     Nanosecond,
 }
 
-impl std::fmt::Display for TimeUnit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for TimeUnit {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             TimeUnit::Second => write!(f, "s"),
             TimeUnit::Millisecond => write!(f, "ms"),
@@ -503,6 +507,7 @@ pub enum UnionMode {
 /// let data_type: DataType = "Int32".parse().unwrap();
 /// assert_eq!(data_type, DataType::Int32);
 /// ```
+#[cfg(feature = "std")]
 impl FromStr for DataType {
     type Err = ArrowError;
 
@@ -511,6 +516,7 @@ impl FromStr for DataType {
     }
 }
 
+#[cfg(feature = "std")]
 impl TryFrom<&str> for DataType {
     type Error = ArrowError;
 
@@ -767,7 +773,7 @@ impl DataType {
     ///
     /// Includes the size of `Self`.
     pub fn size(&self) -> usize {
-        std::mem::size_of_val(self)
+        core::mem::size_of_val(self)
             + match self {
                 DataType::Null
                 | DataType::Boolean
@@ -810,8 +816,8 @@ impl DataType {
                 DataType::Union(fields, _) => fields.size(),
                 DataType::Dictionary(dt1, dt2) => dt1.size() + dt2.size(),
                 DataType::RunEndEncoded(run_ends, values) => {
-                    run_ends.size() - std::mem::size_of_val(run_ends) + values.size()
-                        - std::mem::size_of_val(values)
+                    run_ends.size() - core::mem::size_of_val(run_ends) + values.size()
+                        - core::mem::size_of_val(values)
                 }
             }
     }

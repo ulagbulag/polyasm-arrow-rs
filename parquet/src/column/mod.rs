@@ -117,6 +117,15 @@
 //! assert_eq!(rep_levels, vec![0, 1, 0, 1, 1]);
 //! ```
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 #[cfg(feature = "arrow")]
 pub(crate) mod chunker;
 pub mod page;
@@ -126,4 +135,5 @@ pub(crate) mod page_encryption;
 #[path = "page_encryption_disabled.rs"]
 pub(crate) mod page_encryption;
 pub mod reader;
+#[cfg(feature = "std")]
 pub mod writer;

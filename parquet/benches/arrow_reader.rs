@@ -27,7 +27,6 @@ use parquet::arrow::array_reader::{
     ListArrayReader, make_byte_array_reader, make_byte_view_array_reader,
     make_fixed_len_byte_array_reader,
 };
-use parquet::arrow::arrow_reader::DEFAULT_BATCH_SIZE;
 use parquet::basic::Type;
 use parquet::data_type::{ByteArray, FixedLenByteArrayType};
 use parquet::util::{DataPageBuilder, DataPageBuilderImpl, InMemoryPageIterator};
@@ -710,23 +709,15 @@ fn create_primitive_array_reader(
     use parquet::arrow::array_reader::PrimitiveArrayReader;
     match column_desc.physical_type() {
         Type::INT32 => {
-            let reader = PrimitiveArrayReader::<Int32Type>::new(
-                Box::new(page_iterator),
-                column_desc,
-                None,
-                DEFAULT_BATCH_SIZE,
-            )
-            .unwrap();
+            let reader =
+                PrimitiveArrayReader::<Int32Type>::new(Box::new(page_iterator), column_desc, None)
+                    .unwrap();
             Box::new(reader)
         }
         Type::INT64 => {
-            let reader = PrimitiveArrayReader::<Int64Type>::new(
-                Box::new(page_iterator),
-                column_desc,
-                None,
-                DEFAULT_BATCH_SIZE,
-            )
-            .unwrap();
+            let reader =
+                PrimitiveArrayReader::<Int64Type>::new(Box::new(page_iterator), column_desc, None)
+                    .unwrap();
             Box::new(reader)
         }
         _ => unreachable!(),
@@ -739,13 +730,9 @@ fn create_f16_by_bytes_reader(
 ) -> Box<dyn ArrayReader> {
     let physical_type = column_desc.physical_type();
     match physical_type {
-        Type::FIXED_LEN_BYTE_ARRAY => make_fixed_len_byte_array_reader(
-            Box::new(page_iterator),
-            column_desc,
-            None,
-            DEFAULT_BATCH_SIZE,
-        )
-        .unwrap(),
+        Type::FIXED_LEN_BYTE_ARRAY => {
+            make_fixed_len_byte_array_reader(Box::new(page_iterator), column_desc, None).unwrap()
+        }
         _ => unimplemented!(),
     }
 }
@@ -756,20 +743,12 @@ fn create_decimal_by_bytes_reader(
 ) -> Box<dyn ArrayReader> {
     let physical_type = column_desc.physical_type();
     match physical_type {
-        Type::BYTE_ARRAY => make_byte_array_reader(
-            Box::new(page_iterator),
-            column_desc,
-            None,
-            DEFAULT_BATCH_SIZE,
-        )
-        .unwrap(),
-        Type::FIXED_LEN_BYTE_ARRAY => make_fixed_len_byte_array_reader(
-            Box::new(page_iterator),
-            column_desc,
-            None,
-            DEFAULT_BATCH_SIZE,
-        )
-        .unwrap(),
+        Type::BYTE_ARRAY => {
+            make_byte_array_reader(Box::new(page_iterator), column_desc, None).unwrap()
+        }
+        Type::FIXED_LEN_BYTE_ARRAY => {
+            make_fixed_len_byte_array_reader(Box::new(page_iterator), column_desc, None).unwrap()
+        }
         _ => unimplemented!(),
     }
 }
@@ -778,52 +757,28 @@ fn create_fixed_len_byte_array_reader(
     page_iterator: impl PageIterator + 'static,
     column_desc: ColumnDescPtr,
 ) -> Box<dyn ArrayReader> {
-    make_fixed_len_byte_array_reader(
-        Box::new(page_iterator),
-        column_desc,
-        None,
-        DEFAULT_BATCH_SIZE,
-    )
-    .unwrap()
+    make_fixed_len_byte_array_reader(Box::new(page_iterator), column_desc, None).unwrap()
 }
 
 fn create_byte_array_reader(
     page_iterator: impl PageIterator + 'static,
     column_desc: ColumnDescPtr,
 ) -> Box<dyn ArrayReader> {
-    make_byte_array_reader(
-        Box::new(page_iterator),
-        column_desc,
-        None,
-        DEFAULT_BATCH_SIZE,
-    )
-    .unwrap()
+    make_byte_array_reader(Box::new(page_iterator), column_desc, None).unwrap()
 }
 
 fn create_byte_view_array_reader(
     page_iterator: impl PageIterator + 'static,
     column_desc: ColumnDescPtr,
 ) -> Box<dyn ArrayReader> {
-    make_byte_view_array_reader(
-        Box::new(page_iterator),
-        column_desc,
-        None,
-        DEFAULT_BATCH_SIZE,
-    )
-    .unwrap()
+    make_byte_view_array_reader(Box::new(page_iterator), column_desc, None).unwrap()
 }
 
 fn create_string_view_byte_array_reader(
     page_iterator: impl PageIterator + 'static,
     column_desc: ColumnDescPtr,
 ) -> Box<dyn ArrayReader> {
-    make_byte_view_array_reader(
-        Box::new(page_iterator),
-        column_desc,
-        None,
-        DEFAULT_BATCH_SIZE,
-    )
-    .unwrap()
+    make_byte_view_array_reader(Box::new(page_iterator), column_desc, None).unwrap()
 }
 
 fn create_string_byte_array_dictionary_reader(
@@ -833,13 +788,8 @@ fn create_string_byte_array_dictionary_reader(
     use parquet::arrow::array_reader::make_byte_array_dictionary_reader;
     let arrow_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
 
-    make_byte_array_dictionary_reader(
-        Box::new(page_iterator),
-        column_desc,
-        Some(arrow_type),
-        DEFAULT_BATCH_SIZE,
-    )
-    .unwrap()
+    make_byte_array_dictionary_reader(Box::new(page_iterator), column_desc, Some(arrow_type))
+        .unwrap()
 }
 
 fn create_string_list_reader(

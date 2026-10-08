@@ -17,6 +17,15 @@
 
 //! Support for reading [`ColumnIndexMetaData`] and [`OffsetIndexMetaData`] from parquet metadata.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::basic::{BoundaryOrder, Type};
 use crate::data_type::Int96;
 use crate::errors::{ParquetError, Result};
@@ -26,13 +35,16 @@ use crate::file::page_index::column_index::{
 };
 use crate::file::page_index::offset_index::OffsetIndexMetaData;
 use crate::file::reader::ChunkReader;
+#[cfg(feature = "std")]
+use crate::io::Write;
 use crate::parquet_thrift::{
-    ElementType, FieldType, ReadThrift, ThriftCompactInputProtocol, ThriftCompactOutputProtocol,
-    ThriftSliceInputProtocol, WriteThrift, WriteThriftField, read_thrift_vec,
+    ElementType, FieldType, ReadThrift, ThriftCompactInputProtocol, ThriftSliceInputProtocol,
+    read_thrift_vec,
 };
+#[cfg(feature = "std")]
+use crate::parquet_thrift::{ThriftCompactOutputProtocol, WriteThrift, WriteThriftField};
 use crate::thrift_struct;
-use std::io::Write;
-use std::ops::Range;
+use core::ops::Range;
 
 /// Computes the covering range of two optional ranges
 ///

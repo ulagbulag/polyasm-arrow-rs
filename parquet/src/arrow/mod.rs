@@ -179,8 +179,18 @@
 //! assert_eq!(50, record_batch.num_rows());
 //! ```
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 experimental!(mod array_reader);
 pub mod arrow_reader;
+#[cfg(feature = "std")]
 pub mod arrow_writer;
 mod buffer;
 mod decoder;
@@ -197,8 +207,9 @@ mod record_reader;
 
 experimental!(mod schema);
 
-use std::fmt::Debug;
+use core::fmt::Debug;
 
+#[cfg(feature = "std")]
 pub use self::arrow_writer::ArrowWriter;
 #[cfg(feature = "async")]
 pub use self::async_reader::ParquetRecordBatchStreamBuilder;
@@ -208,10 +219,12 @@ use crate::schema::types::SchemaDescriptor;
 use arrow_schema::{FieldRef, Schema};
 
 pub use self::schema::{
-    ArrowSchemaConverter, FieldLevels, add_encoded_arrow_schema_to_metadata, encode_arrow_schema,
-    parquet_to_arrow_field_levels, parquet_to_arrow_field_levels_with_virtual,
-    parquet_to_arrow_schema, parquet_to_arrow_schema_by_columns, virtual_type::*,
+    ArrowSchemaConverter, FieldLevels, parquet_to_arrow_field_levels,
+    parquet_to_arrow_field_levels_with_virtual, parquet_to_arrow_schema,
+    parquet_to_arrow_schema_by_columns, virtual_type::*,
 };
+#[cfg(feature = "std")]
+pub use self::schema::{add_encoded_arrow_schema_to_metadata, encode_arrow_schema};
 
 /// Schema metadata key used to store serialized Arrow schema
 ///
@@ -500,9 +513,9 @@ mod test {
     use crate::file::properties::{EnabledStatistics, WriterProperties};
     use crate::schema::parser::parse_message_type;
     use crate::schema::types::SchemaDescriptor;
+    use alloc::sync::Arc;
     use arrow_array::{ArrayRef, Int32Array, RecordBatch};
     use bytes::Bytes;
-    use std::sync::Arc;
 
     use super::ProjectionMask;
 

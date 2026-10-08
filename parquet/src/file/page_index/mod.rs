@@ -19,6 +19,15 @@
 //!
 //! [Column Index]: https://github.com/apache/parquet-format/blob/master/PageIndex.md
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 pub mod column_index;
 pub mod index_reader;
 pub mod offset_index;

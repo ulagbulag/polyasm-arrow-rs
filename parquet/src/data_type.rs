@@ -17,16 +17,26 @@
 
 //! Data types that connect Parquet physical types with their Rust-specific
 //! representations.
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use bytes::Bytes;
+use core::cmp::Ordering;
+use core::fmt;
+use core::mem;
+use core::ops::{Deref, DerefMut};
+use core::str::from_utf8;
 use half::f16;
-use std::cmp::Ordering;
-use std::fmt;
-use std::mem;
-use std::ops::{Deref, DerefMut};
-use std::str::from_utf8;
 
 use crate::basic::Type;
 use crate::column::reader::{ColumnReader, ColumnReaderImpl};
+#[cfg(feature = "std")]
 use crate::column::writer::{ColumnWriter, ColumnWriterImpl};
 use crate::errors::{ParquetError, Result};
 use crate::util::bit_util::FromBytes;
@@ -180,7 +190,7 @@ pub struct ByteArray {
 }
 
 // Special case Debug that prints out byte arrays that are valid utf8 as &str's
-impl std::fmt::Debug for ByteArray {
+impl core::fmt::Debug for ByteArray {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug_struct = f.debug_struct("ByteArray");
         match self.as_utf8() {
@@ -553,9 +563,9 @@ macro_rules! gen_as_bytes {
                 // SAFETY: macro is only used with primitive types that have no padding, so the
                 // resulting slice always refers to initialized memory.
                 unsafe {
-                    std::slice::from_raw_parts(
+                    core::slice::from_raw_parts(
                         self as *const $source_ty as *const u8,
-                        std::mem::size_of::<$source_ty>(),
+                        core::mem::size_of::<$source_ty>(),
                     )
                 }
             }
@@ -568,9 +578,9 @@ macro_rules! gen_as_bytes {
                 // SAFETY: macro is only used with primitive types that have no padding, so the
                 // resulting slice always refers to initialized memory.
                 unsafe {
-                    std::slice::from_raw_parts(
+                    core::slice::from_raw_parts(
                         self_.as_ptr() as *const u8,
-                        std::mem::size_of_val(self_),
+                        core::mem::size_of_val(self_),
                     )
                 }
             }
@@ -582,9 +592,9 @@ macro_rules! gen_as_bytes {
                 // resulting slice always refers to initialized memory. Moreover, self has no
                 // invalid bit patterns, so all writes to the resulting slice will be valid.
                 unsafe {
-                    std::slice::from_raw_parts_mut(
+                    core::slice::from_raw_parts_mut(
                         self_.as_mut_ptr() as *mut u8,
-                        std::mem::size_of_val(self_),
+                        core::mem::size_of_val(self_),
                     )
                 }
             }
@@ -627,14 +637,14 @@ impl AsBytes for bool {
     fn as_bytes(&self) -> &[u8] {
         // SAFETY: a bool is guaranteed to be either 0x00 or 0x01 in memory, so the memory is
         // valid.
-        unsafe { std::slice::from_raw_parts(self as *const bool as *const u8, 1) }
+        unsafe { core::slice::from_raw_parts(self as *const bool as *const u8, 1) }
     }
 }
 
 impl AsBytes for Int96 {
     fn as_bytes(&self) -> &[u8] {
         // SAFETY: Int96::data is a &[u32; 3].
-        unsafe { std::slice::from_raw_parts(self.data() as *const [u32] as *const u8, 12) }
+        unsafe { core::slice::from_raw_parts(self.data() as *const [u32] as *const u8, 12) }
     }
 }
 
@@ -675,6 +685,15 @@ impl AsBytes for str {
 }
 
 pub(crate) mod private {
+    #[cfg(not(feature = "std"))]
+    #[allow(unused_imports)]
+    use alloc::{
+        borrow::ToOwned,
+        boxed::Box,
+        string::{String, ToString},
+        vec::Vec,
+    };
+
     use bytes::Bytes;
 
     use crate::encodings::decoding::PlainDecoderDetails;
@@ -691,8 +710,8 @@ pub(crate) mod private {
     /// and not for extension.
     pub trait ParquetValueType:
         PartialEq
-        + std::fmt::Debug
-        + std::fmt::Display
+        + core::fmt::Debug
+        + core::fmt::Display
         + Default
         + Clone
         + super::AsBytes
@@ -707,7 +726,7 @@ pub(crate) mod private {
         const PHYSICAL_TYPE: Type;
 
         /// Encode the value directly from a higher level encoder
-        fn encode<W: std::io::Write>(
+        fn encode<W: crate::io::Write>(
             values: &[Self],
             writer: &mut W,
             bit_writer: &mut BitWriter,
@@ -723,7 +742,7 @@ pub(crate) mod private {
 
         /// Return the encoded size for a type
         fn dict_encoding_size(&self) -> (usize, usize) {
-            (std::mem::size_of::<Self>(), 1)
+            (core::mem::size_of::<Self>(), 1)
         }
 
         /// Return the number of variable length bytes in a given slice of data
@@ -752,10 +771,10 @@ pub(crate) mod private {
         }
 
         /// Return the value as an Any to allow for downcasts without transmutation
-        fn as_any(&self) -> &dyn std::any::Any;
+        fn as_any(&self) -> &dyn core::any::Any;
 
         /// Return the value as an mutable Any to allow for downcasts without transmutation
-        fn as_mut_any(&mut self) -> &mut dyn std::any::Any;
+        fn as_mut_any(&mut self) -> &mut dyn core::any::Any;
 
         /// Sets the value of this object from the provided [`Bytes`]
         ///
@@ -769,7 +788,7 @@ pub(crate) mod private {
         const PHYSICAL_TYPE: Type = Type::BOOLEAN;
 
         #[inline]
-        fn encode<W: std::io::Write>(
+        fn encode<W: crate::io::Write>(
             values: &[Self],
             _: &mut W,
             bit_writer: &mut BitWriter,
@@ -789,7 +808,7 @@ pub(crate) mod private {
         #[inline]
         fn decode(buffer: &mut [Self], decoder: &mut PlainDecoderDetails) -> Result<usize> {
             let bit_reader = decoder.bit_reader.as_mut().unwrap();
-            let num_values = std::cmp::min(buffer.len(), decoder.num_values);
+            let num_values = core::cmp::min(buffer.len(), decoder.num_values);
             let values_read = bit_reader.get_batch(&mut buffer[..num_values], 1);
             decoder.num_values -= values_read;
             Ok(values_read)
@@ -797,7 +816,7 @@ pub(crate) mod private {
 
         fn skip(decoder: &mut PlainDecoderDetails, num_values: usize) -> Result<usize> {
             let bit_reader = decoder.bit_reader.as_mut().unwrap();
-            let num_values = std::cmp::min(num_values, decoder.num_values);
+            let num_values = core::cmp::min(num_values, decoder.num_values);
             let values_read = bit_reader.skip(num_values, 1);
             decoder.num_values -= values_read;
             Ok(values_read)
@@ -809,12 +828,12 @@ pub(crate) mod private {
         }
 
         #[inline]
-        fn as_any(&self) -> &dyn std::any::Any {
+        fn as_any(&self) -> &dyn core::any::Any {
             self
         }
 
         #[inline]
-        fn as_mut_any(&mut self) -> &mut dyn std::any::Any {
+        fn as_mut_any(&mut self) -> &mut dyn core::any::Any {
             self
         }
     }
@@ -825,12 +844,12 @@ pub(crate) mod private {
                 const PHYSICAL_TYPE: Type = $physical_ty;
 
                 #[inline]
-                fn encode<W: std::io::Write>(values: &[Self], writer: &mut W, _: &mut BitWriter) -> Result<()> {
+                fn encode<W: crate::io::Write>(values: &[Self], writer: &mut W, _: &mut BitWriter) -> Result<()> {
                     // SAFETY: Self is one of i32, i64, f32, f64, which have no padding.
                     let raw = unsafe {
-                        std::slice::from_raw_parts(
+                        core::slice::from_raw_parts(
                             values.as_ptr() as *const u8,
-                            std::mem::size_of_val(values),
+                            core::mem::size_of_val(values),
                         )
                     };
                     writer.write_all(raw)?;
@@ -848,9 +867,9 @@ pub(crate) mod private {
                 #[inline]
                 fn decode(buffer: &mut [Self], decoder: &mut PlainDecoderDetails) -> Result<usize> {
                     let data = decoder.data.as_ref().expect("set_data should have been called");
-                    let num_values = std::cmp::min(buffer.len(), decoder.num_values);
+                    let num_values = core::cmp::min(buffer.len(), decoder.num_values);
                     let bytes_left = data.len() - decoder.start;
-                    let bytes_to_decode = std::mem::size_of::<Self>() * num_values;
+                    let bytes_to_decode = core::mem::size_of::<Self>() * num_values;
 
                     if bytes_left < bytes_to_decode {
                         return Err(eof_err!("Not enough bytes to decode"));
@@ -875,7 +894,7 @@ pub(crate) mod private {
                     let data = decoder.data.as_ref().expect("set_data should have been called");
                     let num_values = num_values.min(decoder.num_values);
                     let bytes_left = data.len() - decoder.start;
-                    let bytes_to_skip = std::mem::size_of::<Self>() * num_values;
+                    let bytes_to_skip = core::mem::size_of::<Self>() * num_values;
 
                     if bytes_left < bytes_to_skip {
                         return Err(eof_err!("Not enough bytes to skip"));
@@ -893,12 +912,12 @@ pub(crate) mod private {
                 }
 
                 #[inline]
-                fn as_any(&self) -> &dyn std::any::Any {
+                fn as_any(&self) -> &dyn core::any::Any {
                     self
                 }
 
                 #[inline]
-                fn as_mut_any(&mut self) -> &mut dyn std::any::Any {
+                fn as_mut_any(&mut self) -> &mut dyn core::any::Any {
                     self
                 }
             }
@@ -914,7 +933,7 @@ pub(crate) mod private {
         const PHYSICAL_TYPE: Type = Type::INT96;
 
         #[inline]
-        fn encode<W: std::io::Write>(
+        fn encode<W: crate::io::Write>(
             values: &[Self],
             writer: &mut W,
             _: &mut BitWriter,
@@ -940,7 +959,7 @@ pub(crate) mod private {
                 .data
                 .as_ref()
                 .expect("set_data should have been called");
-            let num_values = std::cmp::min(buffer.len(), decoder.num_values);
+            let num_values = core::cmp::min(buffer.len(), decoder.num_values);
             let bytes_left = data.len() - decoder.start;
             let bytes_to_decode = 12 * num_values;
 
@@ -971,7 +990,7 @@ pub(crate) mod private {
                 .data
                 .as_ref()
                 .expect("set_data should have been called");
-            let num_values = std::cmp::min(num_values, decoder.num_values);
+            let num_values = core::cmp::min(num_values, decoder.num_values);
             let bytes_left = data.len() - decoder.start;
             let bytes_to_skip = 12 * num_values;
 
@@ -985,12 +1004,12 @@ pub(crate) mod private {
         }
 
         #[inline]
-        fn as_any(&self) -> &dyn std::any::Any {
+        fn as_any(&self) -> &dyn core::any::Any {
             self
         }
 
         #[inline]
-        fn as_mut_any(&mut self) -> &mut dyn std::any::Any {
+        fn as_mut_any(&mut self) -> &mut dyn core::any::Any {
             self
         }
     }
@@ -1005,7 +1024,7 @@ pub(crate) mod private {
         const PHYSICAL_TYPE: Type = Type::BYTE_ARRAY;
 
         #[inline]
-        fn encode<W: std::io::Write>(
+        fn encode<W: crate::io::Write>(
             values: &[Self],
             writer: &mut W,
             _: &mut BitWriter,
@@ -1032,11 +1051,11 @@ pub(crate) mod private {
                 .data
                 .as_mut()
                 .expect("set_data should have been called");
-            let num_values = std::cmp::min(buffer.len(), decoder.num_values);
+            let num_values = core::cmp::min(buffer.len(), decoder.num_values);
             for val_array in buffer.iter_mut().take(num_values) {
                 let len: usize =
                     read_num_bytes::<u32>(4, data.slice(decoder.start..).as_ref()) as usize;
-                decoder.start += std::mem::size_of::<u32>();
+                decoder.start += core::mem::size_of::<u32>();
 
                 if data.len() < decoder.start + len {
                     return Err(eof_err!("Not enough bytes to decode"));
@@ -1064,7 +1083,7 @@ pub(crate) mod private {
             for _ in 0..num_values {
                 let len: usize =
                     read_num_bytes::<u32>(4, data.slice(decoder.start..).as_ref()) as usize;
-                decoder.start += std::mem::size_of::<u32>() + len;
+                decoder.start += core::mem::size_of::<u32>() + len;
             }
             decoder.num_values -= num_values;
 
@@ -1073,16 +1092,16 @@ pub(crate) mod private {
 
         #[inline]
         fn dict_encoding_size(&self) -> (usize, usize) {
-            (std::mem::size_of::<u32>(), self.len())
+            (core::mem::size_of::<u32>(), self.len())
         }
 
         #[inline]
-        fn as_any(&self) -> &dyn std::any::Any {
+        fn as_any(&self) -> &dyn core::any::Any {
             self
         }
 
         #[inline]
-        fn as_mut_any(&mut self) -> &mut dyn std::any::Any {
+        fn as_mut_any(&mut self) -> &mut dyn core::any::Any {
             self
         }
 
@@ -1105,7 +1124,7 @@ pub(crate) mod private {
         const PHYSICAL_TYPE: Type = Type::FIXED_LEN_BYTE_ARRAY;
 
         #[inline]
-        fn encode<W: std::io::Write>(
+        fn encode<W: crate::io::Write>(
             values: &[Self],
             writer: &mut W,
             _: &mut BitWriter,
@@ -1132,7 +1151,7 @@ pub(crate) mod private {
                 .data
                 .as_mut()
                 .expect("set_data should have been called");
-            let num_values = std::cmp::min(buffer.len(), decoder.num_values);
+            let num_values = core::cmp::min(buffer.len(), decoder.num_values);
 
             for item in buffer.iter_mut().take(num_values) {
                 let len = decoder.type_length as usize;
@@ -1156,7 +1175,7 @@ pub(crate) mod private {
                 .data
                 .as_mut()
                 .expect("set_data should have been called");
-            let num_values = std::cmp::min(num_values, decoder.num_values);
+            let num_values = core::cmp::min(num_values, decoder.num_values);
             for _ in 0..num_values {
                 let len = decoder.type_length as usize;
 
@@ -1173,16 +1192,16 @@ pub(crate) mod private {
 
         #[inline]
         fn dict_encoding_size(&self) -> (usize, usize) {
-            (std::mem::size_of::<u32>(), self.len())
+            (core::mem::size_of::<u32>(), self.len())
         }
 
         #[inline]
-        fn as_any(&self) -> &dyn std::any::Any {
+        fn as_any(&self) -> &dyn core::any::Any {
             self
         }
 
         #[inline]
-        fn as_mut_any(&mut self) -> &mut dyn std::any::Any {
+        fn as_mut_any(&mut self) -> &mut dyn core::any::Any {
             self
         }
 
@@ -1219,11 +1238,13 @@ pub trait DataType: 'static + Send {
         Self: Sized;
 
     /// Returns the underlying [`ColumnWriterImpl`] for the given [`ColumnWriter`].
+    #[cfg(feature = "std")]
     fn get_column_writer(column_writer: ColumnWriter<'_>) -> Option<ColumnWriterImpl<'_, Self>>
     where
         Self: Sized;
 
     /// Returns a reference to the underlying [`ColumnWriterImpl`] for the given [`ColumnWriter`].
+    #[cfg(feature = "std")]
     fn get_column_writer_ref<'a, 'b: 'a>(
         column_writer: &'b ColumnWriter<'a>,
     ) -> Option<&'b ColumnWriterImpl<'a, Self>>
@@ -1231,6 +1252,7 @@ pub trait DataType: 'static + Send {
         Self: Sized;
 
     /// Returns a mutable reference to the underlying [`ColumnWriterImpl`] for the given
+    #[cfg(feature = "std")]
     fn get_column_writer_mut<'a, 'b: 'a>(
         column_writer: &'a mut ColumnWriter<'b>,
     ) -> Option<&'a mut ColumnWriterImpl<'b, Self>>
@@ -1258,6 +1280,7 @@ macro_rules! make_type {
                 }
             }
 
+            #[cfg(feature = "std")]
             fn get_column_writer(
                 column_writer: ColumnWriter<'_>,
             ) -> Option<ColumnWriterImpl<'_, Self>> {
@@ -1267,6 +1290,7 @@ macro_rules! make_type {
                 }
             }
 
+            #[cfg(feature = "std")]
             fn get_column_writer_ref<'a, 'b: 'a>(
                 column_writer: &'a ColumnWriter<'b>,
             ) -> Option<&'a ColumnWriterImpl<'b, Self>> {
@@ -1276,6 +1300,7 @@ macro_rules! make_type {
                 }
             }
 
+            #[cfg(feature = "std")]
             fn get_column_writer_mut<'a, 'b: 'a>(
                 column_writer: &'a mut ColumnWriter<'b>,
             ) -> Option<&'a mut ColumnWriterImpl<'b, Self>> {

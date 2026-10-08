@@ -15,12 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::{any::Any, sync::Arc};
+use alloc::sync::Arc;
+use core::any::Any;
 
 use crate::{ArrayRef, ArrowPrimitiveType, RunArray, types::RunEndIndexType};
 
 use super::{ArrayBuilder, PrimitiveBuilder};
 
+use alloc::boxed::Box;
 use arrow_buffer::ArrowNativeType;
 
 /// Builder for [`RunArray`] of [`PrimitiveArray`](crate::array::PrimitiveArray)

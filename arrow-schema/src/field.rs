@@ -15,11 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::MetadataMap as HashMap;
 use crate::error::ArrowError;
-use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use alloc::borrow::ToOwned;
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::cmp::Ordering;
+use core::hash::{Hash, Hasher};
 
 use crate::datatype::DataType;
 #[cfg(feature = "canonical_extension_types")]
@@ -60,8 +66,8 @@ pub struct Field {
     metadata: HashMap<String, String>,
 }
 
-impl std::fmt::Debug for Field {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for Field {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         #![expect(deprecated)] // Must still print dict_id, if set
         let Self {
             name,
@@ -504,39 +510,13 @@ impl Field {
             .map(String::as_ref)
     }
 
-    /// Returns `true` if this [`Field`] has the given [`ExtensionType`] name
-    /// and can be successfully validated as that extension type.
-    ///
-    /// This first checks the extension type name and only calls
-    /// [`ExtensionType::validate`] when the name matches.
-    ///
-    /// This is useful when you only need a boolean validity check and do not
-    /// need to retrieve the extension type instance.
-    #[inline]
-    pub fn has_valid_extension_type<E: ExtensionType>(&self) -> bool {
-        if self.extension_type_name() != Some(E::NAME) {
-            return false;
-        }
-
-        let ext_metadata = self
-            .metadata()
-            .get(EXTENSION_TYPE_METADATA_KEY)
-            .map(|s| s.as_str());
-
-        E::deserialize_metadata(ext_metadata)
-            .and_then(|metadata| E::validate(self.data_type(), metadata))
-            .is_ok()
-    }
-
     /// Returns an instance of the given [`ExtensionType`] of this [`Field`],
     /// if set in the [`Field::metadata`].
     ///
     /// Note that using `try_extension_type` with an extension type that does
     /// not match the name in the metadata will return an `ArrowError` which can
     /// be slow due to string allocations. If you only want to check if a
-    /// [`Field`] has a specific [`ExtensionType`], first check
-    /// [`Field::extension_type_name`], or use [`Field::has_valid_extension_type`]
-    /// to also validate metadata and data type.
+    /// [`Field`] has a specific [`ExtensionType`], see the example below.
     ///
     /// # Errors
     ///
@@ -550,7 +530,7 @@ impl Field {
     ///   fail (for example when the [`Field::data_type`] is not supported by
     ///   the extension type ([`ExtensionType::supports_data_type`]))
     ///
-    /// # Example: Check and retrieve an extension type
+    /// # Examples: Check and retrieve an extension type
     /// You can use this to check if a [`Field`] has a specific
     /// [`ExtensionType`] and retrieve it:
     /// ```
@@ -570,6 +550,34 @@ impl Field {
     /// let field = get_field();
     /// if let Ok(extension_type) = field.try_extension_type::<MyExtensionType>() {
     ///   // do something with extension_type
+    /// }
+    /// ```
+    ///
+    /// # Example: Checking if a field has a specific extension type first
+    ///
+    /// Since `try_extension_type` returns an error, it is more
+    /// efficient to first check if the name matches before calling
+    /// `try_extension_type`:
+    /// ```
+    /// # use arrow_schema::{DataType, Field, ArrowError};
+    /// # use arrow_schema::extension::ExtensionType;
+    /// # struct MyExtensionType;
+    /// # impl ExtensionType for MyExtensionType {
+    /// # const NAME: &'static str = "my_extension";
+    /// # type Metadata = String;
+    /// # fn supports_data_type(&self, data_type: &DataType) -> Result<(), ArrowError> { Ok(()) }
+    /// # fn try_new(data_type: &DataType, metadata: Self::Metadata) -> Result<Self, ArrowError> { Ok(Self) }
+    /// # fn serialize_metadata(&self) -> Option<String> { unimplemented!() }
+    /// # fn deserialize_metadata(s: Option<&str>) -> Result<Self::Metadata, ArrowError> { unimplemented!() }
+    /// # fn metadata(&self) -> &<Self as ExtensionType>::Metadata { todo!() }
+    /// # }
+    /// # fn get_field() -> Field { Field::new("field", DataType::Null, false) }
+    /// let field = get_field();
+    /// // First check if the name matches before calling the potentially expensive `try_extension_type`
+    /// if field.extension_type_name() == Some(MyExtensionType::NAME) {
+    ///   if let Ok(extension_type) = field.try_extension_type::<MyExtensionType>() {
+    ///     // do something with extension_type
+    ///   }
     /// }
     /// ```
     pub fn try_extension_type<E: ExtensionType>(&self) -> Result<E, ArrowError> {
@@ -960,10 +968,17 @@ impl Field {
     ///
     /// Includes the size of `Self`.
     pub fn size(&self) -> usize {
-        std::mem::size_of_val(self) - std::mem::size_of_val(&self.data_type)
+        // `BTreeMap`, the `alloc`-only stand-in for `HashMap`, has no spare
+        // capacity to account for; `len` is the number of slots it holds.
+        #[cfg(feature = "std")]
+        let metadata_slots = self.metadata.capacity();
+        #[cfg(not(feature = "std"))]
+        let metadata_slots = self.metadata.len();
+
+        core::mem::size_of_val(self) - core::mem::size_of_val(&self.data_type)
             + self.data_type.size()
             + self.name.capacity()
-            + (std::mem::size_of::<(String, String)>() * self.metadata.capacity())
+            + (core::mem::size_of::<(String, String)>() * metadata_slots)
             + self
                 .metadata
                 .iter()
@@ -972,8 +987,8 @@ impl Field {
     }
 }
 
-impl std::fmt::Display for Field {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Field {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         #![expect(deprecated)] // Must still print dict_id, if set
         let Self {
             name,
@@ -1010,80 +1025,6 @@ impl std::fmt::Display for Field {
 mod test {
     use super::*;
     use std::collections::hash_map::DefaultHasher;
-
-    #[derive(Debug, Clone, Copy)]
-    struct TestExtensionType;
-
-    impl ExtensionType for TestExtensionType {
-        const NAME: &'static str = "test.extension";
-        type Metadata = ();
-
-        fn metadata(&self) -> &Self::Metadata {
-            &()
-        }
-
-        fn serialize_metadata(&self) -> Option<String> {
-            None
-        }
-
-        fn deserialize_metadata(metadata: Option<&str>) -> Result<Self::Metadata, ArrowError> {
-            metadata.map_or(Ok(()), |_| {
-                Err(ArrowError::InvalidArgumentError(
-                    "TestExtensionType expects no metadata".to_owned(),
-                ))
-            })
-        }
-
-        fn supports_data_type(&self, _data_type: &DataType) -> Result<(), ArrowError> {
-            Ok(())
-        }
-
-        fn try_new(_data_type: &DataType, _metadata: Self::Metadata) -> Result<Self, ArrowError> {
-            Ok(Self)
-        }
-    }
-
-    #[test]
-    fn test_has_valid_extension_type() {
-        let no_extension = Field::new("f", DataType::Null, false);
-        assert!(!no_extension.has_valid_extension_type::<TestExtensionType>());
-
-        let matching_name = Field::new("f", DataType::Null, false).with_metadata(
-            [(
-                EXTENSION_TYPE_NAME_KEY.to_owned(),
-                TestExtensionType::NAME.to_owned(),
-            )]
-            .into_iter()
-            .collect(),
-        );
-        assert!(matching_name.has_valid_extension_type::<TestExtensionType>());
-
-        let matching_name_with_invalid_metadata = Field::new("f", DataType::Null, false)
-            .with_metadata(
-                [
-                    (
-                        EXTENSION_TYPE_NAME_KEY.to_owned(),
-                        TestExtensionType::NAME.to_owned(),
-                    ),
-                    (EXTENSION_TYPE_METADATA_KEY.to_owned(), "invalid".to_owned()),
-                ]
-                .into_iter()
-                .collect(),
-            );
-        assert!(
-            !matching_name_with_invalid_metadata.has_valid_extension_type::<TestExtensionType>()
-        );
-
-        let different_name = Field::new("f", DataType::Null, false).with_metadata(
-            [(
-                EXTENSION_TYPE_NAME_KEY.to_owned(),
-                "some.other_extension".to_owned(),
-            )]
-            .into_iter()
-            .collect(),
-        );
-        assert!(!different_name.has_valid_extension_type::<TestExtensionType>());
-    }
 
     #[test]
     fn test_new_with_string() {

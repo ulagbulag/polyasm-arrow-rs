@@ -15,11 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::errors::ParquetError;
 use crate::file::reader::{ChunkReader, Length};
 use bytes::Bytes;
-use std::fmt::Display;
-use std::ops::Range;
+use core::fmt::Display;
+use core::ops::Range;
 
 /// Holds multiple buffers of data
 ///
@@ -51,7 +60,7 @@ pub(crate) struct PushBuffers {
 }
 
 impl Display for PushBuffers {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         writeln!(
             f,
             "Buffers (offset: {}, file_len: {})",
@@ -154,12 +163,6 @@ impl PushBuffers {
         self.ranges = new_ranges;
         self.buffers = new_buffers;
     }
-
-    /// Clear all buffered ranges and their corresponding data
-    pub fn clear_all_ranges(&mut self) {
-        self.ranges.clear();
-        self.buffers.clear();
-    }
 }
 
 impl Length for PushBuffers {
@@ -169,8 +172,8 @@ impl Length for PushBuffers {
 }
 
 /// less efficient implementation of Read for Buffers
-impl std::io::Read for PushBuffers {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+impl crate::io::Read for PushBuffers {
+    fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
         // Find the range that contains the start offset
         let mut found = false;
         for (range, data) in self.iter() {
@@ -190,8 +193,8 @@ impl std::io::Read for PushBuffers {
             self.offset += buf.len() as u64;
             Ok(buf.len())
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
+            Err(crate::io::Error::new(
+                crate::io::ErrorKind::UnexpectedEof,
                 "No data available in Buffers",
             ))
         }

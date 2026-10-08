@@ -22,8 +22,10 @@ mod canonical;
 #[cfg(feature = "canonical_extension_types")]
 pub use canonical::*;
 
+use crate::MetadataMap as HashMap;
 use crate::{ArrowError, DataType};
-use std::collections::HashMap;
+use alloc::format;
+use alloc::string::{String, ToString};
 
 /// The metadata key for the string name identifying an [`ExtensionType`].
 pub const EXTENSION_TYPE_NAME_KEY: &str = "ARROW:extension:name";
@@ -256,15 +258,6 @@ pub trait ExtensionType: Sized {
     /// This should return an error if the given data type is not supported by
     /// this extension type.
     fn try_new(data_type: &DataType, metadata: Self::Metadata) -> Result<Self, ArrowError>;
-
-    /// Validate this extension type for a field with the given data type and
-    /// metadata.
-    ///
-    /// The default implementation delegates to [`Self::try_new`]. Extension
-    /// types may override this to validate without constructing `Self`.
-    fn validate(data_type: &DataType, metadata: Self::Metadata) -> Result<(), ArrowError> {
-        Self::try_new(data_type, metadata).map(|_| ())
-    }
 
     /// Construct this extension type from field metadata and data type.
     ///

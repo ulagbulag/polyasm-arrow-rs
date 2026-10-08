@@ -493,14 +493,17 @@ where
 struct U64UnalignedSlice<'a> {
     /// Pointer to the start of the u64 data
     ///
-    /// We are using raw pointer as the data came from a u8 slice so we need to read and write unaligned
-    ptr: *mut u64,
+    /// We are using raw pointer as the data came from a u8 slice so we need to read and write
+    /// unaligned. It stays a byte pointer: bit-packed buffers store the least significant byte
+    /// first, so each word is assembled from and written back as explicit little-endian bytes
+    /// rather than in the machine's own order, which PolyASM leaves unpublished.
+    ptr: *mut u8,
 
     /// Number of u64 elements
     len: usize,
 
     /// Marker to tie the lifetime of the pointer to the lifetime of the u8 slice
-    _marker: std::marker::PhantomData<&'a u8>,
+    _marker: core::marker::PhantomData<&'a u8>,
 }
 
 impl<'a> U64UnalignedSlice<'a> {
@@ -531,12 +534,12 @@ impl<'a> U64UnalignedSlice<'a> {
         assert!(u64_len_in_bytes <= left_buffer_mut.len());
         let (bytes_for_u64, remainder) = left_buffer_mut.split_at_mut(u64_len_in_bytes);
 
-        let ptr = bytes_for_u64.as_mut_ptr() as *mut u64;
+        let ptr = bytes_for_u64.as_mut_ptr();
 
         let this = Self {
             ptr,
             len: number_of_u64_we_can_fit,
-            _marker: std::marker::PhantomData,
+            _marker: core::marker::PhantomData,
         };
 
         (this, remainder)
@@ -573,7 +576,7 @@ impl<'a> U64UnalignedSlice<'a> {
             // Advance the pointer
             //
             // SAFETY: We asserted that the iterator length and the current length are the same
-            self.ptr = unsafe { self.ptr.add(1) };
+            self.ptr = unsafe { self.ptr.add(size_of::<u64>()) };
 
             // SAFETY: the pointer is valid as we are within the length
             unsafe {
@@ -591,24 +594,23 @@ impl<'a> U64UnalignedSlice<'a> {
     ///
     #[inline]
     unsafe fn apply_bin_op(&mut self, right: u64, mut map: impl FnMut(u64, u64) -> u64) {
+        // bit-packed buffers are stored starting with the least-significant byte first, so the
+        // word is assembled from its bytes; no machine byte order is involved either way.
+        //
         // SAFETY: The constructor ensures the pointer is valid,
         // and as to all modifications in U64UnalignedSlice
-        let current_input = unsafe {
-            self.ptr
-                // Reading unaligned as we came from u8 slice
-                .read_unaligned()
-                // bit-packed buffers are stored starting with the least-significant byte first
-                // so when reading as u64 on a big-endian machine, the bytes need to be swapped
-                .to_le()
-        };
+        let mut bytes = [0_u8; size_of::<u64>()];
+        unsafe { ::core::ptr::copy_nonoverlapping(self.ptr, bytes.as_mut_ptr(), bytes.len()) };
+        let current_input = u64::from_le_bytes(bytes);
 
         let combined = map(current_input, right);
 
         // Write the result back
         //
         // The pointer came from mutable u8 slice so the pointer is valid for writes,
-        // and we need to write unaligned
-        unsafe { self.ptr.write_unaligned(combined) }
+        // and its bytes are written in the same little-endian order they were read in
+        let bytes = combined.to_le_bytes();
+        unsafe { ::core::ptr::copy_nonoverlapping(bytes.as_ptr(), self.ptr, bytes.len()) };
     }
 
     /// Modify the underlying u64 data in place using a unary operation.
@@ -632,7 +634,7 @@ impl<'a> U64UnalignedSlice<'a> {
             // Advance the pointer
             //
             // SAFETY: we only advance the pointer within the length and not beyond
-            self.ptr = unsafe { self.ptr.add(1) };
+            self.ptr = unsafe { self.ptr.add(size_of::<u64>()) };
 
             // SAFETY: the pointer is valid as we are within the length
             unsafe {
@@ -750,7 +752,7 @@ fn set_remainder_bits(start_remainder_mut_slice: &mut [u8], rem: u64, remainder_
         // which is correct for all ArrowNativeType implementations including u64.
         let src = rem.as_ptr();
         unsafe {
-            std::ptr::copy_nonoverlapping(
+            core::ptr::copy_nonoverlapping(
                 src,
                 start_remainder_mut_slice.as_mut_ptr(),
                 remainder_bytes,

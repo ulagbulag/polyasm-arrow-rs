@@ -18,11 +18,13 @@
 use crate::builder::ArrayBuilder;
 use crate::types::{ByteArrayType, GenericBinaryType, GenericStringType};
 use crate::{Array, ArrayRef, GenericByteArray, OffsetSizeTrait};
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use arrow_buffer::{ArrowNativeType, Buffer, MutableBuffer, NullBufferBuilder, ScalarBuffer};
 use arrow_data::ArrayDataBuilder;
 use arrow_schema::ArrowError;
-use std::any::Any;
-use std::sync::Arc;
+use core::any::Any;
 
 /// Builder for [`GenericByteArray`]
 ///
@@ -152,7 +154,7 @@ impl<T: ByteArrayType> GenericByteBuilder<T> {
         self.null_buffer_builder.append_n_nulls(n);
         let next_offset = self.next_offset();
         self.offsets_builder
-            .extend(std::iter::repeat_n(next_offset, n));
+            .extend(core::iter::repeat_n(next_offset, n));
     }
 
     /// Appends array values and null to this builder as is
@@ -202,8 +204,8 @@ impl<T: ByteArrayType> GenericByteBuilder<T> {
         let array_type = T::DATA_TYPE;
         let array_builder = ArrayDataBuilder::new(array_type)
             .len(self.len())
-            .add_buffer(std::mem::take(&mut self.offsets_builder).into())
-            .add_buffer(std::mem::take(&mut self.value_builder).into())
+            .add_buffer(core::mem::take(&mut self.offsets_builder).into())
+            .add_buffer(core::mem::take(&mut self.value_builder).into())
             .nulls(self.null_buffer_builder.finish());
 
         self.offsets_builder.push(self.next_offset());
@@ -247,8 +249,8 @@ impl<T: ByteArrayType> GenericByteBuilder<T> {
     }
 }
 
-impl<T: ByteArrayType> std::fmt::Debug for GenericByteBuilder<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: ByteArrayType> core::fmt::Debug for GenericByteBuilder<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}{}Builder", T::Offset::PREFIX, T::PREFIX)?;
         f.debug_struct("")
             .field("value_builder", &self.value_builder)
@@ -356,8 +358,8 @@ impl<T: ByteArrayType, V: AsRef<T::Native>> Extend<Option<V>> for GenericByteBui
 /// ```
 pub type GenericStringBuilder<O> = GenericByteBuilder<GenericStringType<O>>;
 
-impl<O: OffsetSizeTrait> std::fmt::Write for GenericStringBuilder<O> {
-    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+impl<O: OffsetSizeTrait> core::fmt::Write for GenericStringBuilder<O> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
         self.value_builder.extend_from_slice(s.as_bytes());
         Ok(())
     }
@@ -394,7 +396,7 @@ pub trait StringLikeArrayBuilder: ArrayBuilder {
 
 impl<O: OffsetSizeTrait> StringLikeArrayBuilder for GenericStringBuilder<O> {
     fn type_name() -> &'static str {
-        std::any::type_name::<Self>()
+        core::any::type_name::<Self>()
     }
     fn with_capacity(capacity: usize) -> Self {
         Self::with_capacity(capacity, capacity * AVERAGE_STRING_LENGTH)
@@ -438,7 +440,7 @@ pub trait BinaryLikeArrayBuilder: ArrayBuilder {
 
 impl<O: OffsetSizeTrait> BinaryLikeArrayBuilder for GenericBinaryBuilder<O> {
     fn type_name() -> &'static str {
-        std::any::type_name::<Self>()
+        core::any::type_name::<Self>()
     }
     fn with_capacity(capacity: usize) -> Self {
         Self::with_capacity(capacity, capacity * AVERAGE_BINARY_LENGTH)
@@ -498,6 +500,8 @@ impl<O: OffsetSizeTrait> BinaryLikeArrayBuilder for GenericBinaryBuilder<O> {
 /// ```
 pub type GenericBinaryBuilder<O> = GenericByteBuilder<GenericBinaryType<O>>;
 
+// `std::io::Write` lives in `std` alone.
+#[cfg(feature = "std")]
 impl<O: OffsetSizeTrait> std::io::Write for GenericBinaryBuilder<O> {
     fn write(&mut self, bs: &[u8]) -> std::io::Result<usize> {
         self.value_builder.extend_from_slice(bs);
@@ -515,7 +519,7 @@ mod tests {
     use crate::GenericStringArray;
     use crate::array::Array;
     use arrow_buffer::NullBuffer;
-    use std::fmt::Write as _;
+    use core::fmt::Write as _;
     use std::io::Write as _;
 
     fn _test_generic_binary_builder<O: OffsetSizeTrait>() {

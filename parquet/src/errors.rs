@@ -17,10 +17,20 @@
 
 //! Common Parquet errors and macros.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+use crate::io;
+use alloc::string::FromUtf8Error;
+use core::error::Error;
 use core::num::TryFromIntError;
-use std::error::Error;
-use std::string::FromUtf8Error;
-use std::{cell, io, result, str};
+use core::{cell, result, str};
 
 #[cfg(feature = "arrow")]
 use arrow_schema::ArrowError;
@@ -55,11 +65,11 @@ pub enum ParquetError {
     NeedMoreData(usize),
     /// Returned when a function needs more data to complete properly.
     /// The `Range<u64>` indicates the range of bytes that are needed.
-    NeedMoreDataRange(std::ops::Range<u64>),
+    NeedMoreDataRange(core::ops::Range<u64>),
 }
 
-impl std::fmt::Display for ParquetError {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl core::fmt::Display for ParquetError {
+    fn fmt(&self, fmt: &mut core::fmt::Formatter) -> core::fmt::Result {
         match &self {
             ParquetError::General(message) => {
                 write!(fmt, "Parquet error: {message}")
@@ -108,6 +118,7 @@ impl From<snap::Error> for ParquetError {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<thrift::Error> for ParquetError {
     fn from(e: thrift::Error) -> ParquetError {
         ParquetError::External(Box::new(e))
@@ -159,6 +170,7 @@ pub type Result<T, E = ParquetError> = result::Result<T, E>;
 // ----------------------------------------------------------------------
 // Conversion from `ParquetError` to other types of `Error`s
 
+#[cfg(feature = "std")]
 impl From<ParquetError> for io::Error {
     fn from(e: ParquetError) -> Self {
         io::Error::other(e)

@@ -20,6 +20,7 @@ use super::{
     utils::{extend_offsets, get_last_offset},
 };
 use crate::ArrayData;
+use alloc::boxed::Box;
 use arrow_buffer::ArrowNativeType;
 use num_integer::Integer;
 use num_traits::CheckedAdd;

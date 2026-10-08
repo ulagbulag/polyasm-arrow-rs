@@ -18,11 +18,13 @@
 use crate::builder::ArrayBuilder;
 use crate::types::*;
 use crate::{Array, ArrayRef, PrimitiveArray};
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use arrow_buffer::{Buffer, MutableBuffer, NullBufferBuilder, ScalarBuffer};
 use arrow_data::ArrayData;
 use arrow_schema::{ArrowError, DataType};
-use std::any::Any;
-use std::sync::Arc;
+use core::any::Any;
 
 /// A signed 8-bit integer array builder.
 pub type Int8Builder = PrimitiveBuilder<Int8Type>;
@@ -210,7 +212,7 @@ impl<T: ArrowPrimitiveType> PrimitiveBuilder<T> {
     #[inline]
     pub fn append_value_n(&mut self, v: T::Native, n: usize) {
         self.null_buffer_builder.append_n_non_nulls(n);
-        self.values_builder.extend(std::iter::repeat_n(v, n));
+        self.values_builder.extend(core::iter::repeat_n(v, n));
     }
 
     /// Appends a null slot into the builder
@@ -225,7 +227,7 @@ impl<T: ArrowPrimitiveType> PrimitiveBuilder<T> {
     pub fn append_nulls(&mut self, n: usize) {
         self.null_buffer_builder.append_n_nulls(n);
         self.values_builder
-            .extend(std::iter::repeat_n(T::Native::default(), n));
+            .extend(core::iter::repeat_n(T::Native::default(), n));
     }
 
     /// Appends an `Option<T>` into the builder
@@ -325,7 +327,7 @@ impl<T: ArrowPrimitiveType> PrimitiveBuilder<T> {
         let nulls = self.null_buffer_builder.finish();
         let builder = ArrayData::builder(self.data_type.clone())
             .len(len)
-            .add_buffer(std::mem::take(&mut self.values_builder).into())
+            .add_buffer(core::mem::take(&mut self.values_builder).into())
             .nulls(nulls);
 
         let array_data = unsafe { builder.build_unchecked() };

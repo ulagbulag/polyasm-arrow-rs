@@ -17,7 +17,16 @@
 
 //! Contains Row enum that is used to represent record in Rust.
 
-use std::fmt;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+use core::fmt;
 
 use chrono::{TimeZone, Utc};
 use half::f16;
@@ -1009,8 +1018,8 @@ fn convert_decimal_to_string(decimal: &Decimal) -> String {
 mod tests {
     use super::*;
 
-    use std::f64::consts::PI;
-    use std::sync::Arc;
+    use alloc::sync::Arc;
+    use core::f64::consts::PI;
 
     use crate::schema::types::{ColumnDescriptor, ColumnPath, PrimitiveTypeBuilder};
 

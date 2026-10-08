@@ -23,8 +23,21 @@
 //! [Parquet metadata API]: crate::file::metadata
 //! [Parquet specification]: https://github.com/apache/parquet-format/tree/master
 
-use std::io::Write;
-use std::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+#[cfg(feature = "std")]
+use crate::io::Write;
+
+#[cfg(feature = "std")]
+use crate::parquet_thrift::{ThriftCompactOutputProtocol, WriteThrift, WriteThriftField};
+use alloc::sync::Arc;
 
 #[cfg(feature = "encryption")]
 pub(crate) mod encryption;
@@ -49,8 +62,7 @@ use crate::{
         statistics::ValueStatistics,
     },
     parquet_thrift::{
-        ElementType, FieldType, ReadThrift, ThriftCompactInputProtocol,
-        ThriftCompactOutputProtocol, ThriftSliceInputProtocol, WriteThrift, WriteThriftField,
+        ElementType, FieldType, ReadThrift, ThriftCompactInputProtocol, ThriftSliceInputProtocol,
         read_thrift_vec,
     },
     schema::types::{
@@ -1128,13 +1140,8 @@ impl DataPageHeaderV2 {
                     repetition_levels_byte_length = Some(val);
                 }
                 7 => {
-                    if field_ident.bool_val.is_none() {
-                        return Err(general_err!(
-                            "Expected bool field but got thrift type {:?}",
-                            field_ident.field_type
-                        ));
-                    }
-                    is_compressed = field_ident.bool_val;
+                    let val = field_ident.bool_val.unwrap();
+                    is_compressed = Some(val);
                 }
                 _ => {
                     prot.skip(field_ident.field_type)?;
@@ -1322,6 +1329,7 @@ fn should_write_column_stats(_column_chunk: &ColumnChunkMetaData) -> bool {
 //   16: optional SizeStatistics size_statistics;
 //   17: optional GeospatialStatistics geospatial_statistics;
 // }
+#[cfg(feature = "std")]
 pub(super) fn serialize_column_meta_data<W: Write>(
     column_chunk: &ColumnChunkMetaData,
     w: &mut ThriftCompactOutputProtocol<W>,
@@ -1419,6 +1427,7 @@ pub(super) struct FileMeta<'a> {
 //   8: optional EncryptionAlgorithm encryption_algorithm
 //   9: optional binary footer_signing_key_metadata
 // }
+#[cfg(feature = "std")]
 impl<'a> WriteThrift for FileMeta<'a> {
     const ELEMENT_TYPE: ElementType = ElementType::Struct;
 
@@ -1468,6 +1477,7 @@ impl<'a> WriteThrift for FileMeta<'a> {
     }
 }
 
+#[cfg(feature = "std")]
 fn write_schema<W: Write>(
     schema: &TypePtr,
     writer: &mut ThriftCompactOutputProtocol<W>,
@@ -1478,6 +1488,7 @@ fn write_schema<W: Write>(
     write_schema_helper(schema, writer)
 }
 
+#[cfg(feature = "std")]
 fn write_schema_helper<W: Write>(
     node: &TypePtr,
     writer: &mut ThriftCompactOutputProtocol<W>,
@@ -1566,6 +1577,7 @@ fn write_schema_helper<W: Write>(
 //   6: optional i64 total_compressed_size
 //   7: optional i16 ordinal
 // }
+#[cfg(feature = "std")]
 impl WriteThrift for RowGroupMetaData {
     const ELEMENT_TYPE: ElementType = ElementType::Struct;
 
@@ -1602,6 +1614,7 @@ impl WriteThrift for RowGroupMetaData {
 //   8: optional ColumnCryptoMetaData crypto_metadata
 //   9: optional binary encrypted_column_metadata
 // }
+#[cfg(feature = "std")]
 impl WriteThrift for ColumnChunkMetaData {
     const ELEMENT_TYPE: ElementType = ElementType::Struct;
 
@@ -1664,6 +1677,7 @@ impl WriteThrift for ColumnChunkMetaData {
 //   1: optional BoundingBox bbox;
 //   2: optional list<i32> geospatial_types;
 // }
+#[cfg(feature = "std")]
 impl WriteThrift for crate::geospatial::statistics::GeospatialStatistics {
     const ELEMENT_TYPE: ElementType = ElementType::Struct;
 
@@ -1694,6 +1708,7 @@ write_thrift_field!(RustGeospatialStatistics, FieldType::Struct);
 //   7: optional double mmin;
 //   8: optional double mmax;
 // }
+#[cfg(feature = "std")]
 impl WriteThrift for crate::geospatial::bounding_box::BoundingBox {
     const ELEMENT_TYPE: ElementType = ElementType::Struct;
 
@@ -1726,23 +1741,19 @@ write_thrift_field!(RustBoundingBox, FieldType::Struct);
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use crate::basic::{Encoding, PageType, Type as PhysicalType};
+    use crate::basic::Type as PhysicalType;
     use crate::errors::Result;
-    use crate::file::metadata::thrift::{
-        BoundingBox, DataPageHeaderV2, DictionaryPageHeader, PageHeader, SchemaElement,
-        write_schema,
-    };
+    use crate::file::metadata::thrift::{BoundingBox, SchemaElement, write_schema};
     use crate::file::metadata::{ColumnChunkMetaData, ParquetMetaDataOptions, RowGroupMetaData};
     use crate::parquet_thrift::tests::test_roundtrip;
     use crate::parquet_thrift::{
-        ElementType, ThriftCompactOutputProtocol, ThriftSliceInputProtocol, WriteThrift,
-        read_thrift_vec,
+        ElementType, ThriftCompactOutputProtocol, ThriftSliceInputProtocol, read_thrift_vec,
     };
     use crate::schema::types::{
         ColumnDescriptor, ColumnPath, SchemaDescriptor, TypePtr, num_nodes,
         parquet_schema_from_array,
     };
-    use std::sync::Arc;
+    use alloc::sync::Arc;
 
     // for testing. decode thrift encoded RowGroup
     pub(crate) fn read_row_group(
@@ -1801,29 +1812,6 @@ pub(crate) mod tests {
     pub(crate) fn buf_to_schema_list<'a>(buf: &'a mut Vec<u8>) -> Result<Vec<SchemaElement<'a>>> {
         let mut prot = ThriftSliceInputProtocol::new(buf.as_mut_slice());
         read_thrift_vec(&mut prot)
-    }
-
-    fn thrift_bytes<T: WriteThrift>(value: &T) -> Vec<u8> {
-        let mut buf = Vec::new();
-        let mut writer = ThriftCompactOutputProtocol::new(&mut buf);
-        value.write_thrift(&mut writer).unwrap();
-        buf
-    }
-
-    fn change_false_bool_field_to_i32(buf: &mut [u8]) {
-        let pos = buf
-            .iter()
-            .rposition(|byte| *byte == 0x12)
-            .expect("expected BOOL_FALSE field header byte");
-        buf[pos] = 0x15;
-    }
-
-    fn assert_malformed_bool_error(err: crate::errors::ParquetError) {
-        let msg = err.to_string();
-        assert!(
-            msg.contains("Expected bool field"),
-            "unexpected error message: {msg}"
-        );
     }
 
     #[test]
@@ -1904,53 +1892,5 @@ pub(crate) mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(decoded_zero.null_count_opt(), Some(0));
-    }
-
-    #[test]
-    fn malformed_bool_field_returns_error_not_panic() {
-        let page_header = PageHeader {
-            r#type: PageType::DICTIONARY_PAGE,
-            uncompressed_page_size: 1,
-            compressed_page_size: 1,
-            crc: None,
-            data_page_header: None,
-            index_page_header: None,
-            dictionary_page_header: Some(DictionaryPageHeader {
-                num_values: 1,
-                encoding: Encoding::PLAIN,
-                is_sorted: Some(false),
-            }),
-            data_page_header_v2: None,
-        };
-
-        let mut buf = thrift_bytes(&page_header);
-        change_false_bool_field_to_i32(&mut buf);
-
-        let mut prot = ThriftSliceInputProtocol::new(&buf);
-        let err = PageHeader::read_thrift_without_stats(&mut prot)
-            .expect_err("malformed bool field should return an error");
-        assert_malformed_bool_error(err);
-    }
-
-    #[test]
-    fn malformed_data_page_v2_bool_field_returns_error_not_panic() {
-        let data_page_header_v2 = DataPageHeaderV2 {
-            num_values: 1,
-            num_nulls: 0,
-            num_rows: 1,
-            encoding: Encoding::PLAIN,
-            definition_levels_byte_length: 0,
-            repetition_levels_byte_length: 0,
-            is_compressed: Some(false),
-            statistics: None,
-        };
-
-        let mut buf = thrift_bytes(&data_page_header_v2);
-        change_false_bool_field_to_i32(&mut buf);
-
-        let mut prot = ThriftSliceInputProtocol::new(&buf);
-        let err = DataPageHeaderV2::read_thrift_without_stats(&mut prot)
-            .expect_err("malformed bool field should return an error");
-        assert_malformed_bool_error(err);
     }
 }

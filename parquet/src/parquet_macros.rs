@@ -31,6 +31,15 @@
 //! [Thrift compact]: https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md#list-and-set
 //! [THRIFT.md]: https://github.com/apache/arrow-rs/blob/main/parquet/THRIFT.md
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 #[doc(hidden)]
 #[macro_export]
 #[allow(clippy::crate_in_macro_def)]
@@ -66,6 +75,7 @@ macro_rules! thrift_enum {
             }
         }
 
+        #[cfg(feature = "std")]
         impl WriteThrift for $identifier {
             const ELEMENT_TYPE: ElementType = ElementType::I32;
 
@@ -74,6 +84,7 @@ macro_rules! thrift_enum {
             }
         }
 
+        #[cfg(feature = "std")]
         impl WriteThriftField for $identifier {
             fn write_thrift_field<W: Write>(&self, writer: &mut ThriftCompactOutputProtocol<W>, field_id: i16, last_field_id: i16) -> Result<i16> {
                 writer.write_field_begin(FieldType::I32, field_id, last_field_id)?;
@@ -165,6 +176,7 @@ macro_rules! thrift_union_all_empty {
             }
         }
 
+        #[cfg(feature = "std")]
         impl WriteThrift for $identifier {
             const ELEMENT_TYPE: ElementType = ElementType::Struct;
 
@@ -177,6 +189,7 @@ macro_rules! thrift_union_all_empty {
             }
         }
 
+        #[cfg(feature = "std")]
         impl WriteThriftField for $identifier {
             fn write_thrift_field<W: Write>(&self, writer: &mut ThriftCompactOutputProtocol<W>, field_id: i16, last_field_id: i16) -> Result<i16> {
                 writer.write_field_begin(FieldType::Struct, field_id, last_field_id)?;
@@ -238,6 +251,7 @@ macro_rules! thrift_union {
             }
         }
 
+        #[cfg(feature = "std")]
         impl $(<$lt>)? WriteThrift for $identifier $(<$lt>)? {
             const ELEMENT_TYPE: ElementType = ElementType::Struct;
 
@@ -250,6 +264,7 @@ macro_rules! thrift_union {
             }
         }
 
+        #[cfg(feature = "std")]
         impl $(<$lt>)? WriteThriftField for $identifier $(<$lt>)? {
             fn write_thrift_field<W: Write>(&self, writer: &mut ThriftCompactOutputProtocol<W>, field_id: i16, last_field_id: i16) -> Result<i16> {
                 writer.write_field_begin(FieldType::Struct, field_id, last_field_id)?;
@@ -307,6 +322,7 @@ macro_rules! thrift_struct {
             }
         }
 
+        #[cfg(feature = "std")]
         impl $(<$lt>)? WriteThrift for $identifier $(<$lt>)? {
             const ELEMENT_TYPE: ElementType = ElementType::Struct;
 
@@ -319,6 +335,7 @@ macro_rules! thrift_struct {
             }
         }
 
+        #[cfg(feature = "std")]
         impl $(<$lt>)? WriteThriftField for $identifier $(<$lt>)? {
             fn write_thrift_field<W: Write>(&self, writer: &mut ThriftCompactOutputProtocol<W>, field_id: i16, last_field_id: i16) -> Result<i16> {
                 writer.write_field_begin(FieldType::Struct, field_id, last_field_id)?;
@@ -334,6 +351,7 @@ macro_rules! thrift_struct {
 /// Generate `WriteThriftField` implementation for a struct.
 macro_rules! write_thrift_field {
     ($identifier:ident $(< $lt:lifetime >)?, $fld_type:expr) => {
+        #[cfg(feature = "std")]
         impl $(<$lt>)? WriteThriftField for $identifier $(<$lt>)? {
             fn write_thrift_field<W: Write>(&self, writer: &mut ThriftCompactOutputProtocol<W>, field_id: i16, last_field_id: i16) -> Result<i16> {
                 writer.write_field_begin($fld_type, field_id, last_field_id)?;
@@ -464,10 +482,7 @@ macro_rules! __thrift_read_field {
         $crate::parquet_thrift::OrderedF64::read_thrift(&mut *$prot)?
     };
     ($prot:tt, $field_ident:tt, bool) => {
-        $field_ident.bool_val.ok_or_else(|| general_err!(
-            "Expected bool field but got thrift type {:?}",
-            $field_ident.field_type
-        ))?
+        $field_ident.bool_val.unwrap()
     };
     ($prot:tt, $field_ident:tt, $field_type:ident) => {
         $field_type::read_thrift(&mut *$prot)?

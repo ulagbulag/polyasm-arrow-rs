@@ -15,9 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::any::Any;
-use std::sync::Arc;
+use alloc::sync::Arc;
+use core::any::Any;
 
+use alloc::vec::Vec;
 use arrow_buffer::{ArrowNativeType, BooleanBufferBuilder, NullBuffer, RunEndBuffer, ScalarBuffer};
 use arrow_data::{ArrayData, ArrayDataBuilder};
 use arrow_schema::{ArrowError, DataType, Field};
@@ -29,25 +30,6 @@ use crate::{
     run_iterator::RunArrayIter,
     types::{Int16Type, Int32Type, Int64Type, RunEndIndexType},
 };
-
-/// Recursively applies a function to the values of a RunEndEncoded array, preserving the run structure.
-///
-/// # Example
-///
-/// ```ignore
-/// let result = ree_recurse!(array, Int32Type, my_function)?;
-/// ```
-///
-/// This macro is useful for implementing functions that should work on the logical values
-/// of a REE array while preserving the run-end encoding structure.
-#[macro_export]
-macro_rules! ree_map {
-    ($array:expr, $run_type:ty, $func:expr) => {{
-        let ree = $array.as_run_opt::<$run_type>().unwrap();
-        let inner_values = $func(ree.values().as_ref())?;
-        Ok(std::sync::Arc::new(ree.with_values(inner_values)))
-    }};
-}
 
 /// An array of [run-end encoded values].
 ///
@@ -217,46 +199,6 @@ impl<R: RunEndIndexType> RunArray<R> {
     /// values here and must be handled separately.
     pub fn values(&self) -> &ArrayRef {
         &self.values
-    }
-
-    /// Returns a new [`RunArray`] with the same `run_ends` and the supplied `values`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `values.len()` does not equal `self.values().len()`.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use std::sync::Arc;
-    /// # use arrow_array::{RunArray, Int32Array, StringArray, ArrayRef,Array};
-    /// # use arrow_array::types::Int32Type;
-    /// // A RunArray logically representing ["a", "a", "b", "c", "c"]
-    /// let run_ends = Int32Array::from(vec![2, 3, 5]);
-    /// let values: ArrayRef = Arc::new(StringArray::from(vec!["a", "b", "c"]));
-    /// let run_array = RunArray::<Int32Type>::try_new(&run_ends, &values).unwrap();
-    ///
-    /// // Swap in new values while keeping the same run pattern.
-    /// // The result logically represents ["x", "x", "y", "z", "z"].
-    /// let new_values: ArrayRef = Arc::new(StringArray::from(vec!["x", "y", "z"]));
-    /// let new_run_array = run_array.with_values(new_values);
-    ///
-    /// assert_eq!(new_run_array.len(), 5);
-    /// assert_eq!(new_run_array.run_ends().values(), &[2, 3, 5]);
-    /// ```
-    pub fn with_values(&self, values: ArrayRef) -> Self {
-        assert_eq!(values.len(), self.values().len());
-        let (run_ends_field, values_field) = match &self.data_type {
-            DataType::RunEndEncoded(r, v) => (r, v),
-            _ => unreachable!("RunArray should have type RunEndEncoded"),
-        };
-        let data_type =
-            DataType::RunEndEncoded(Arc::clone(run_ends_field), Arc::clone(values_field));
-        Self {
-            data_type,
-            run_ends: self.run_ends.clone(),
-            values,
-        }
     }
 
     /// Similar to [`values`] but accounts for logical slicing, returning only the values
@@ -495,7 +437,7 @@ unsafe impl<T: RunEndIndexType> Array for RunArray<T> {
     }
 
     fn get_array_memory_size(&self) -> usize {
-        std::mem::size_of::<Self>()
+        core::mem::size_of::<Self>()
             + self.run_ends.inner().inner().capacity()
             + self.values.get_array_memory_size()
     }
@@ -507,8 +449,8 @@ unsafe impl<T: RunEndIndexType> Array for RunArray<T> {
     }
 }
 
-impl<R: RunEndIndexType> std::fmt::Debug for RunArray<R> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<R: RunEndIndexType> core::fmt::Debug for RunArray<R> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         writeln!(
             f,
             "RunArray {{run_ends: {:?}, values: {:?}}}",
@@ -653,8 +595,8 @@ impl<R: RunEndIndexType, V> Clone for TypedRunArray<'_, R, V> {
 
 impl<R: RunEndIndexType, V> Copy for TypedRunArray<'_, R, V> {}
 
-impl<R: RunEndIndexType, V> std::fmt::Debug for TypedRunArray<'_, R, V> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<R: RunEndIndexType, V> core::fmt::Debug for TypedRunArray<'_, R, V> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         writeln!(f, "TypedRunArray({:?})", self.run_array)
     }
 }

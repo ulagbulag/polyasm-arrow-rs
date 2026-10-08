@@ -22,8 +22,9 @@ use crate::{
     BooleanBufferBuilder, Buffer, MutableBuffer, bit_util, buffer_bin_and, buffer_bin_or,
     buffer_bin_xor,
 };
+use alloc_crate::vec::Vec;
 
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not};
+use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not};
 
 /// A slice-able [`Buffer`] containing bit-packed booleans
 ///
@@ -244,24 +245,39 @@ impl BooleanBuffer {
 
         let aligned_start = &src.as_ref()[aligned_offset / 8..slice_end];
 
-        let (prefix, aligned_u64s, suffix) = unsafe { aligned_start.as_ref().align_to::<u64>() };
-        match (prefix, suffix) {
-            ([], []) => {
-                // the buffer is word (64 bit) aligned, so use optimized Vec code.
-                let result_u64s: Vec<u64> = aligned_u64s.iter().map(|l| op(*l)).collect();
-                return BooleanBuffer::new(result_u64s.into(), offset_in_bits % 64, len_in_bits);
+        // PolyASM publishes no native byte order, so `align_to::<u64>()`, which reads
+        // the aligned middle in the machine's own order, stays off there; the explicit
+        // little-endian `chunks_exact(8)` path below yields the same words.
+        #[cfg(not(target_abi = "polyasm"))]
+        {
+            let (prefix, aligned_u64s, suffix) =
+                unsafe { aligned_start.as_ref().align_to::<u64>() };
+            match (prefix, suffix) {
+                ([], []) => {
+                    // the buffer is word (64 bit) aligned, so use optimized Vec code.
+                    let result_u64s: Vec<u64> = aligned_u64s.iter().map(|l| op(*l)).collect();
+                    return BooleanBuffer::new(
+                        result_u64s.into(),
+                        offset_in_bits % 64,
+                        len_in_bits,
+                    );
+                }
+                ([], suffix) => {
+                    let suffix = read_u64(suffix);
+                    let result_u64s: Vec<u64> = aligned_u64s
+                        .iter()
+                        .cloned()
+                        .chain(core::iter::once(suffix))
+                        .map(&mut op)
+                        .collect();
+                    return BooleanBuffer::new(
+                        result_u64s.into(),
+                        offset_in_bits % 64,
+                        len_in_bits,
+                    );
+                }
+                _ => {}
             }
-            ([], suffix) => {
-                let suffix = read_u64(suffix);
-                let result_u64s: Vec<u64> = aligned_u64s
-                    .iter()
-                    .cloned()
-                    .chain(std::iter::once(suffix))
-                    .map(&mut op)
-                    .collect();
-                return BooleanBuffer::new(result_u64s.into(), offset_in_bits % 64, len_in_bits);
-            }
-            _ => {}
         }
 
         // align to byte boundaries
@@ -360,32 +376,37 @@ impl BooleanBuffer {
             let left_slice = &left[left_aligned / 8..left_end_bytes];
             let right_slice = &right[right_aligned / 8..right_end_bytes];
 
-            let (lp, left_u64s, ls) = unsafe { left_slice.align_to::<u64>() };
-            let (rp, right_u64s, rs) = unsafe { right_slice.align_to::<u64>() };
+            // As in `from_bitwise_unary_op`: PolyASM has no native byte order to read
+            // the aligned middle in, so the `chunks_exact(8)` fallback below stands in.
+            #[cfg(not(target_abi = "polyasm"))]
+            {
+                let (lp, left_u64s, ls) = unsafe { left_slice.align_to::<u64>() };
+                let (rp, right_u64s, rs) = unsafe { right_slice.align_to::<u64>() };
 
-            match (lp, ls, rp, rs) {
-                ([], [], [], []) => {
-                    let result_u64s: Vec<u64> = left_u64s
-                        .iter()
-                        .zip(right_u64s.iter())
-                        .map(|(l, r)| op(*l, *r))
-                        .collect();
-                    return BooleanBuffer::new(result_u64s.into(), bit_offset, len_in_bits);
+                match (lp, ls, rp, rs) {
+                    ([], [], [], []) => {
+                        let result_u64s: Vec<u64> = left_u64s
+                            .iter()
+                            .zip(right_u64s.iter())
+                            .map(|(l, r)| op(*l, *r))
+                            .collect();
+                        return BooleanBuffer::new(result_u64s.into(), bit_offset, len_in_bits);
+                    }
+                    ([], left_suf, [], right_suf) => {
+                        let left_iter = left_u64s
+                            .iter()
+                            .cloned()
+                            .chain((!left_suf.is_empty()).then(|| read_u64(left_suf)));
+                        let right_iter = right_u64s
+                            .iter()
+                            .cloned()
+                            .chain((!right_suf.is_empty()).then(|| read_u64(right_suf)));
+                        let result_u64s: Vec<u64> =
+                            left_iter.zip(right_iter).map(|(l, r)| op(l, r)).collect();
+                        return BooleanBuffer::new(result_u64s.into(), bit_offset, len_in_bits);
+                    }
+                    _ => {}
                 }
-                ([], left_suf, [], right_suf) => {
-                    let left_iter = left_u64s
-                        .iter()
-                        .cloned()
-                        .chain((!left_suf.is_empty()).then(|| read_u64(left_suf)));
-                    let right_iter = right_u64s
-                        .iter()
-                        .cloned()
-                        .chain((!right_suf.is_empty()).then(|| read_u64(right_suf)));
-                    let result_u64s: Vec<u64> =
-                        left_iter.zip(right_iter).map(|(l, r)| op(l, r)).collect();
-                    return BooleanBuffer::new(result_u64s.into(), bit_offset, len_in_bits);
-                }
-                _ => {}
             }
 
             // Memory not u64-aligned, use chunks_exact fallback
@@ -579,7 +600,7 @@ impl BooleanBuffer {
     {
         assert_eq!(self.bit_len, rhs.bit_len);
         // Try to mutate in place if the buffer is uniquely owned
-        let buffer = std::mem::take(&mut self.buffer);
+        let buffer = core::mem::take(&mut self.buffer);
         match buffer.into_mutable() {
             Ok(mut buf) => {
                 bit_util::apply_bitwise_binary_op(
@@ -1178,7 +1199,7 @@ mod tests {
         builder.append(true);
         assert_eq!(builder.as_slice().len(), bit_util::ceil(builder.len(), 8));
         let finished = builder.finish();
-        for (i, v) in bools.into_iter().chain(std::iter::once(true)).enumerate() {
+        for (i, v) in bools.into_iter().chain(core::iter::once(true)).enumerate() {
             assert_eq!(finished.value(i), v, "at index {}", i);
         }
     }

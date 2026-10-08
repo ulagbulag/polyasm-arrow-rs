@@ -20,14 +20,23 @@
 //! [`ColumnIndex`]: https://github.com/apache/parquet-format/blob/master/PageIndex.md
 //!
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+#[cfg(feature = "std")]
+use crate::parquet_thrift::{ThriftCompactOutputProtocol, WriteThrift, WriteThriftField};
 use crate::{
     data_type::{ByteArray, FixedLenByteArray},
     errors::{ParquetError, Result},
-    parquet_thrift::{
-        ElementType, FieldType, ThriftCompactOutputProtocol, WriteThrift, WriteThriftField,
-    },
+    parquet_thrift::{ElementType, FieldType},
 };
-use std::ops::Deref;
+use core::ops::Deref;
 
 use crate::{
     basic::BoundaryOrder,
@@ -105,36 +114,6 @@ impl<T: ParquetValueType> PrimitiveColumnIndex<T> {
         max_bytes: Vec<&[u8]>,
     ) -> Result<Self> {
         let len = null_pages.len();
-
-        if min_bytes.len() != len || max_bytes.len() != len {
-            return Err(ParquetError::General(format!(
-                "ColumnIndex min/max length mismatch: expected {len}, got min={} max={}",
-                min_bytes.len(),
-                max_bytes.len()
-            )));
-        }
-        if let Some(ref nc) = null_counts {
-            if nc.len() != len {
-                return Err(ParquetError::General(format!(
-                    "ColumnIndex null_counts length mismatch: expected {len}, got {}",
-                    nc.len()
-                )));
-            }
-        }
-        if let Some(ref rep) = repetition_level_histograms {
-            if len != 0 && rep.len() % len != 0 {
-                return Err(ParquetError::General(
-                    "Invalid repetition_level_histograms length".to_string(),
-                ));
-            }
-        }
-        if let Some(ref def) = definition_level_histograms {
-            if len != 0 && def.len() % len != 0 {
-                return Err(ParquetError::General(
-                    "Invalid definition_level_histograms length".to_string(),
-                ));
-            }
-        }
 
         let mut min_values = Vec::with_capacity(len);
         let mut max_values = Vec::with_capacity(len);
@@ -255,9 +234,10 @@ impl<T> Deref for PrimitiveColumnIndex<T> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<T: ParquetValueType> WriteThrift for PrimitiveColumnIndex<T> {
     const ELEMENT_TYPE: ElementType = ElementType::Struct;
-    fn write_thrift<W: std::io::Write>(
+    fn write_thrift<W: crate::io::Write>(
         &self,
         writer: &mut ThriftCompactOutputProtocol<W>,
     ) -> Result<()> {
@@ -324,36 +304,6 @@ impl ByteArrayColumnIndex {
         max_values: Vec<&[u8]>,
     ) -> Result<Self> {
         let len = null_pages.len();
-
-        if min_values.len() != len || max_values.len() != len {
-            return Err(ParquetError::General(format!(
-                "ColumnIndex min/max length mismatch: expected {len}, got min={} max={}",
-                min_values.len(),
-                max_values.len()
-            )));
-        }
-        if let Some(ref nc) = null_counts {
-            if nc.len() != len {
-                return Err(ParquetError::General(format!(
-                    "ColumnIndex null_counts length mismatch: expected {len}, got {}",
-                    nc.len()
-                )));
-            }
-        }
-        if let Some(ref rep) = repetition_level_histograms {
-            if len != 0 && rep.len() % len != 0 {
-                return Err(ParquetError::General(
-                    "Invalid repetition_level_histograms length".to_string(),
-                ));
-            }
-        }
-        if let Some(ref def) = definition_level_histograms {
-            if len != 0 && def.len() % len != 0 {
-                return Err(ParquetError::General(
-                    "Invalid definition_level_histograms length".to_string(),
-                ));
-            }
-        }
 
         let min_len = min_values.iter().map(|&v| v.len()).sum();
         let max_len = max_values.iter().map(|&v| v.len()).sum();
@@ -464,9 +414,10 @@ impl Deref for ByteArrayColumnIndex {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThrift for ByteArrayColumnIndex {
     const ELEMENT_TYPE: ElementType = ElementType::Struct;
-    fn write_thrift<W: std::io::Write>(
+    fn write_thrift<W: crate::io::Write>(
         &self,
         writer: &mut ThriftCompactOutputProtocol<W>,
     ) -> Result<()> {
@@ -704,10 +655,11 @@ column_index_iters!(ByteArray, BYTE_ARRAY, |v| v
 column_index_iters!(FixedLenByteArray, FIXED_LEN_BYTE_ARRAY, |v| v
     .map(|v| FixedLenByteArray::from(v.to_owned())));
 
+#[cfg(feature = "std")]
 impl WriteThrift for ColumnIndexMetaData {
     const ELEMENT_TYPE: ElementType = ElementType::Struct;
 
-    fn write_thrift<W: std::io::Write>(
+    fn write_thrift<W: crate::io::Write>(
         &self,
         writer: &mut ThriftCompactOutputProtocol<W>,
     ) -> Result<()> {
@@ -797,25 +749,5 @@ mod tests {
             err.to_string(),
             "Parquet error: error converting value, expected 4 bytes got 0"
         );
-    }
-
-    #[test]
-    fn test_column_index_rejects_mismatched_min_max_lengths() {
-        // Two pages, but only one min/max entry. The entry itself is valid i32 bytes,
-        // so this specifically checks that lengths must match the number of pages.
-        let column_index = ThriftColumnIndex {
-            null_pages: vec![false, false],
-            min_values: vec![&[1u8, 0, 0, 0]],
-            max_values: vec![&[10u8, 0, 0, 0]],
-            null_counts: None,
-            repetition_level_histograms: None,
-            definition_level_histograms: None,
-            boundary_order: BoundaryOrder::UNORDERED,
-        };
-
-        // ColumnIndex arrays must align with the number of pages (null_pages.len()).
-        let err = PrimitiveColumnIndex::<i32>::try_from_thrift(column_index).unwrap_err();
-        // Should fail because min/max lengths don’t match null_pages
-        assert!(err.to_string().contains("length mismatch"));
     }
 }

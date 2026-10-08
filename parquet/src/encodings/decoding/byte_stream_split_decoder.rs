@@ -15,7 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::marker::PhantomData;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+use core::marker::PhantomData;
 
 use bytes::Bytes;
 
@@ -228,7 +237,7 @@ impl<T: DataType> Decoder<T> for VariableWidthByteStreamSplitDecoder<T> {
         self.values_decoded += num_values;
 
         // create a buffer from the vec so far (and leave a new Vec in its place)
-        let vec_with_data = std::mem::take(&mut tmp_vec);
+        let vec_with_data = core::mem::take(&mut tmp_vec);
         // convert Vec to Bytes (which is a ref counted wrapper)
         let bytes_with_data = Bytes::from(vec_with_data);
         for (i, bi) in buffer.iter_mut().enumerate().take(num_values) {

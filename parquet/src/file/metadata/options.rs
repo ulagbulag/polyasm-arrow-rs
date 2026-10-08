@@ -17,8 +17,17 @@
 
 //! Options used to control metadata parsing
 
-use std::collections::HashSet;
-use std::sync::Arc;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+use crate::collections::HashSet;
+use alloc::sync::Arc;
 
 use crate::schema::types::SchemaDescPtr;
 
@@ -64,7 +73,7 @@ impl ParquetStatisticsPolicy {
         if keep.is_empty() {
             Self::SkipAll
         } else {
-            let mut keep_set = HashSet::<usize>::with_capacity(keep.len());
+            let mut keep_set = crate::collections::set_with_capacity::<usize>(keep.len());
             keep_set.extend(keep.iter());
             Self::SkipExcept(Arc::new(keep_set))
         }
@@ -255,7 +264,9 @@ mod tests {
         file::metadata::{ParquetMetaDataOptions, ParquetMetaDataPushDecoder},
         util::test_common::file_util::get_test_file,
     };
-    use std::{io::Read, sync::Arc};
+    use alloc::sync::Arc;
+
+    use crate::io::Read;
 
     #[test]
     fn test_options_default() {

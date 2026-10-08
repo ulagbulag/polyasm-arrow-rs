@@ -36,6 +36,15 @@
 //! Note that `parquet-rowcount` reads full file schema, no projection or filtering is
 //! applied.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use clap::Parser;
 use parquet::file::reader::{FileReader, SerializedFileReader};
 use std::{fs::File, path::Path};

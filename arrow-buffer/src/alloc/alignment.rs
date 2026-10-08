@@ -86,6 +86,10 @@ pub const ALIGNMENT: usize = 1 << 6;
 #[cfg(target_arch = "wasm32")]
 pub const ALIGNMENT: usize = 1 << 6;
 
+/// Cache line size of the PolyASM targets.
+#[cfg(target_arch = "polyasm")]
+pub const ALIGNMENT: usize = 1 << 6;
+
 // Same as v6 and v7.
 // List goes like that:
 // Cortex A, M, R, ARM v7, v7-M, Krait and NeoverseN uses this size.

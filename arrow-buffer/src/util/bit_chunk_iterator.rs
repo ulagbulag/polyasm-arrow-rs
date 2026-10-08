@@ -18,7 +18,7 @@
 //! Types for iterating over bitmasks in 64-bit chunks
 
 use crate::util::bit_util::ceil;
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 /// Iterates over an arbitrarily aligned byte buffer
 ///
@@ -171,9 +171,9 @@ impl<'a> UnalignedBitChunk<'a> {
 }
 
 /// Iterator over an [`UnalignedBitChunk`]
-pub type UnalignedBitChunkIterator<'a> = std::iter::Chain<
-    std::iter::Chain<std::option::IntoIter<u64>, std::iter::Cloned<std::slice::Iter<'a, u64>>>,
-    std::option::IntoIter<u64>,
+pub type UnalignedBitChunkIterator<'a> = core::iter::Chain<
+    core::iter::Chain<core::option::IntoIter<u64>, core::iter::Cloned<core::slice::Iter<'a, u64>>>,
+    core::option::IntoIter<u64>,
 >;
 
 #[inline]
@@ -277,12 +277,12 @@ impl<'a> BitChunks<'a> {
             let base = unsafe {
                 self.buffer
                     .as_ptr()
-                    .add(self.chunk_len * std::mem::size_of::<u64>())
+                    .add(self.chunk_len * core::mem::size_of::<u64>())
             };
 
-            let mut bits = unsafe { std::ptr::read(base) } as u64 >> bit_offset;
+            let mut bits = unsafe { core::ptr::read(base) } as u64 >> bit_offset;
             for i in 1..byte_len {
-                let byte = unsafe { std::ptr::read(base.add(i)) };
+                let byte = unsafe { core::ptr::read(base.add(i)) };
                 bits |= (byte as u64) << (i * 8 - bit_offset);
             }
 
@@ -325,7 +325,7 @@ impl<'a> BitChunks<'a> {
     /// Returns an iterator over chunks of 64 bits, with the remaining bits zero padded to 64-bits
     #[inline]
     pub fn iter_padded(&self) -> impl Iterator<Item = u64> + 'a {
-        self.iter().chain(std::iter::once(self.remainder_bits()))
+        self.iter().chain(core::iter::once(self.remainder_bits()))
     }
 }
 
@@ -354,7 +354,7 @@ impl Iterator for BitChunkIterator<'_> {
 
         // bit-packed buffers are stored starting with the least-significant byte first
         // so when reading as u64 on a big-endian machine, the bytes need to be swapped
-        let current = unsafe { std::ptr::read_unaligned(raw_data.add(index)).to_le() };
+        let current = unsafe { core::ptr::read_unaligned(raw_data.add(index)).to_le() };
 
         let bit_offset = self.bit_offset;
 
@@ -364,7 +364,7 @@ impl Iterator for BitChunkIterator<'_> {
             // the constructor ensures that bit_offset is in 0..8
             // that means we need to read at most one additional byte to fill in the high bits
             let next =
-                unsafe { std::ptr::read_unaligned(raw_data.add(index + 1) as *const u8) as u64 };
+                unsafe { core::ptr::read_unaligned(raw_data.add(index + 1) as *const u8) as u64 };
 
             (current >> bit_offset) | (next << (64 - bit_offset))
         };
@@ -711,7 +711,7 @@ mod tests {
         let uusize = UniformUsize::new(usize::MIN, usize::MAX).unwrap();
         for _ in 0..100 {
             let mask_len = rng.random_range(0..1024);
-            let bools: Vec<_> = std::iter::from_fn(|| Some(rng.random()))
+            let bools: Vec<_> = core::iter::from_fn(|| Some(rng.random()))
                 .take(mask_len)
                 .collect();
 

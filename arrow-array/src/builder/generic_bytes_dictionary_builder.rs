@@ -20,12 +20,12 @@ use crate::types::{ArrowDictionaryKeyType, ByteArrayType, GenericBinaryType, Gen
 use crate::{
     Array, ArrayRef, DictionaryArray, GenericByteArray, PrimitiveArray, TypedDictionaryArray,
 };
+use alloc::sync::Arc;
 use arrow_buffer::ArrowNativeType;
 use arrow_schema::{ArrowError, DataType};
+use core::any::Any;
 use hashbrown::HashTable;
 use num_traits::NumCast;
-use std::any::Any;
-use std::sync::Arc;
 
 /// Builder for [`DictionaryArray`] of [`GenericByteArray`]
 ///
@@ -84,7 +84,7 @@ where
     ) -> Self {
         Self {
             state: Default::default(),
-            dedup: HashTable::with_capacity(value_capacity),
+            dedup: Default::default(),
             keys_builder: PrimitiveBuilder::with_capacity(keys_capacity),
             values_builder: GenericByteBuilder::<T>::with_capacity(value_capacity, data_capacity),
         }
@@ -255,10 +255,6 @@ where
     /// Builds the array without resetting the builder.
     fn finish_cloned(&self) -> ArrayRef {
         Arc::new(self.finish_cloned())
-    }
-
-    fn finish_preserve_values(&mut self) -> ArrayRef {
-        Arc::new(self.finish_preserve_values())
     }
 }
 
@@ -645,25 +641,6 @@ mod tests {
     #[test]
     fn test_binary_dictionary_builder() {
         test_bytes_dictionary_builder::<GenericBinaryType<i32>>(vec![b"abc", b"def"]);
-    }
-
-    #[test]
-    fn test_with_capacity_presizes_dedup() {
-        // `with_capacity` must size the dedup `HashTable` from `value_capacity`,
-        // otherwise the first inserts force a chain of resize+rehash cycles.
-        let value_capacity = 128;
-        let builder =
-            GenericByteDictionaryBuilder::<Int32Type, GenericStringType<i32>>::with_capacity(
-                256,
-                value_capacity,
-                value_capacity * 32,
-            );
-        assert!(
-            builder.dedup.capacity() >= value_capacity,
-            "dedup HashTable not pre-sized: got capacity {}, expected >= {}",
-            builder.dedup.capacity(),
-            value_capacity,
-        );
     }
 
     fn test_bytes_dictionary_builder_finish_cloned<T>(values: Vec<&T::Native>)

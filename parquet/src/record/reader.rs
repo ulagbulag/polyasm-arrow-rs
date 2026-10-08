@@ -18,6 +18,15 @@
 //! Contains implementation of record assembly and converting Parquet types into
 //! [`Row`]s.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use std::{collections::HashMap, fmt, sync::Arc};
 
 use crate::basic::{ConvertedType, Repetition};

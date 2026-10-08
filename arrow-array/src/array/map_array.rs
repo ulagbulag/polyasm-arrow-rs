@@ -18,11 +18,13 @@
 use crate::array::{get_offsets_from_buffer, print_long_array};
 use crate::iterator::MapArrayIter;
 use crate::{Array, ArrayAccessor, ArrayRef, ListArray, StringArray, StructArray, make_array};
+use alloc::string::ToString;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use arrow_buffer::{ArrowNativeType, Buffer, NullBuffer, OffsetBuffer, ToByteSlice};
 use arrow_data::{ArrayData, ArrayDataBuilder};
 use arrow_schema::{ArrowError, DataType, Field, FieldRef};
-use std::any::Any;
-use std::sync::Arc;
+use core::any::Any;
 
 /// An array of key-value maps
 ///
@@ -423,7 +425,7 @@ unsafe impl Array for MapArray {
     }
 
     fn get_array_memory_size(&self) -> usize {
-        let mut size = std::mem::size_of::<Self>() + self.entries.get_array_memory_size();
+        let mut size = core::mem::size_of::<Self>() + self.entries.get_array_memory_size();
         size += self.value_offsets.inner().inner().capacity();
         if let Some(n) = self.nulls.as_ref() {
             size += n.buffer().capacity();
@@ -453,11 +455,11 @@ impl ArrayAccessor for &MapArray {
     }
 }
 
-impl std::fmt::Debug for MapArray {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl core::fmt::Debug for MapArray {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "MapArray\n[\n")?;
         print_long_array(self, f, |array, index, f| {
-            std::fmt::Debug::fmt(&array.value(index), f)
+            core::fmt::Debug::fmt(&array.value(index), f)
         })?;
         write!(f, "]")
     }

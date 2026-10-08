@@ -15,6 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::schema::types::TypePtr;
 
 use super::super::errors::ParquetError;
@@ -32,7 +41,7 @@ use super::super::file::writer::SerializedRowGroupWriter;
 /// [`ParquetRecordWriter`]: https://docs.rs/parquet_derive/53.0.0/parquet_derive/derive.ParquetRecordWriter.html
 pub trait RecordWriter<T> {
     /// Writes from `self` into `row_group_writer`.
-    fn write_to_row_group<W: std::io::Write + Send>(
+    fn write_to_row_group<W: crate::io::Write + Send>(
         &self,
         row_group_writer: &mut SerializedRowGroupWriter<W>,
     ) -> Result<(), ParquetError>;

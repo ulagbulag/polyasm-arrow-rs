@@ -86,6 +86,15 @@
 //!
 //!                         * Same name, different struct
 //! ```
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 mod footer_tail;
 mod memory;
 mod options;
@@ -93,6 +102,7 @@ mod parser;
 mod push_decoder;
 pub(crate) mod reader;
 pub(crate) mod thrift;
+#[cfg(feature = "std")]
 mod writer;
 
 use crate::basic::{EncodingMask, PageType};
@@ -107,6 +117,8 @@ use crate::file::page_index::column_index::{ByteArrayColumnIndex, PrimitiveColum
 use crate::file::page_index::{column_index::ColumnIndexMetaData, offset_index::PageLocation};
 use crate::file::statistics::Statistics;
 use crate::geospatial::statistics as geo_statistics;
+#[cfg(feature = "std")]
+use crate::parquet_thrift::{ThriftCompactOutputProtocol, WriteThrift, WriteThriftField};
 use crate::schema::types::{
     ColumnDescPtr, ColumnDescriptor, ColumnPath, SchemaDescPtr, SchemaDescriptor,
     Type as SchemaType,
@@ -118,23 +130,23 @@ use crate::{
 };
 use crate::{
     basic::{ColumnOrder, Compression, Encoding, Type},
-    parquet_thrift::{
-        ElementType, FieldType, ReadThrift, ThriftCompactInputProtocol,
-        ThriftCompactOutputProtocol, WriteThrift, WriteThriftField,
-    },
+    parquet_thrift::{ElementType, FieldType, ReadThrift, ThriftCompactInputProtocol},
 };
 use crate::{
     data_type::private::ParquetValueType, file::page_index::offset_index::OffsetIndexMetaData,
 };
 
+#[cfg(feature = "std")]
+use crate::io::Write;
+use alloc::sync::Arc;
+use core::ops::Range;
 pub use footer_tail::FooterTail;
 pub use options::{ParquetMetaDataOptions, ParquetStatisticsPolicy};
 pub use push_decoder::ParquetMetaDataPushDecoder;
 pub use reader::{PageIndexPolicy, ParquetMetaDataReader};
-use std::io::Write;
-use std::ops::Range;
-use std::sync::Arc;
+#[cfg(feature = "std")]
 pub use writer::ParquetMetaDataWriter;
+#[cfg(feature = "std")]
 pub(crate) use writer::ThriftMetadataWriter;
 
 /// Page level statistics for each column chunk of each row group.
@@ -293,7 +305,7 @@ impl ParquetMetaData {
         #[cfg(not(feature = "encryption"))]
         let encryption_size = 0usize;
 
-        std::mem::size_of::<Self>()
+        core::mem::size_of::<Self>()
             + self.file_metadata.heap_size()
             + self.row_groups.heap_size()
             + self.column_index.heap_size()
@@ -380,7 +392,7 @@ impl ParquetMetaDataBuilder {
     /// This can be used for more efficient creation of a new ParquetMetaData
     /// from an existing one.
     pub fn take_row_groups(&mut self) -> Vec<RowGroupMetaData> {
-        std::mem::take(&mut self.0.row_groups)
+        core::mem::take(&mut self.0.row_groups)
     }
 
     /// Return a reference to the current row groups
@@ -396,7 +408,7 @@ impl ParquetMetaDataBuilder {
 
     /// Returns the current column index from the builder, replacing it with `None`
     pub fn take_column_index(&mut self) -> Option<ParquetColumnIndex> {
-        std::mem::take(&mut self.0.column_index)
+        core::mem::take(&mut self.0.column_index)
     }
 
     /// Return a reference to the current column index, if any
@@ -412,7 +424,7 @@ impl ParquetMetaDataBuilder {
 
     /// Returns the current offset index from the builder, replacing it with `None`
     pub fn take_offset_index(&mut self) -> Option<ParquetOffsetIndex> {
-        std::mem::take(&mut self.0.offset_index)
+        core::mem::take(&mut self.0.offset_index)
     }
 
     /// Return a reference to the current offset index, if any
@@ -760,7 +772,7 @@ impl RowGroupMetaDataBuilder {
     /// This can be used for more efficient creation of a new RowGroupMetaData
     /// from an existing one.
     pub fn take_columns(&mut self) -> Vec<ColumnChunkMetaData> {
-        std::mem::take(&mut self.0.columns)
+        core::mem::take(&mut self.0.columns)
     }
 
     /// Sets column metadata for this row group.
@@ -919,21 +931,14 @@ impl LevelHistogram {
         }
     }
 
-    /// Increments the count for a level value by `count`.
-    #[inline]
-    pub fn increment_by(&mut self, level: i16, count: i64) {
-        self.inner[level as usize] += count;
-    }
-
     /// Updates histogram values using provided repetition levels
     ///
     /// # Panics
     /// if any of the levels is greater than the length of the histogram (
     /// the argument supplied to [`Self::try_new`])
-    #[deprecated(since = "58.2.0", note = "Use `increment_by` instead")]
     pub fn update_from_levels(&mut self, levels: &[i16]) {
         for &level in levels {
-            self.increment_by(level, 1);
+            self.inner[level as usize] += 1;
         }
     }
 }
@@ -1690,14 +1695,6 @@ mod tests {
     use crate::file::metadata::thrift::tests::{
         read_column_chunk, read_column_chunk_with_options, read_row_group,
     };
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_level_histogram_update_from_levels_compat() {
-        let mut histogram = LevelHistogram::try_new(2).unwrap();
-        histogram.update_from_levels(&[0, 2, 1, 2, 2]);
-        assert_eq!(histogram.values(), &[1, 1, 3]);
-    }
 
     #[test]
     fn test_row_group_metadata_thrift_conversion() {

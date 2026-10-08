@@ -18,6 +18,15 @@
 //! RowNumber
 //!
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use arrow_schema::{ArrowError, DataType, Field, extension::ExtensionType};
 
 /// Prefix for virtual column extension type names.
@@ -69,10 +78,6 @@ impl ExtensionType for RowGroupIndex {
     fn try_new(data_type: &DataType, _metadata: Self::Metadata) -> Result<Self, ArrowError> {
         Self.supports_data_type(data_type).map(|_| Self)
     }
-
-    fn validate(data_type: &DataType, _metadata: Self::Metadata) -> Result<(), ArrowError> {
-        Self.supports_data_type(data_type)
-    }
 }
 
 /// The extension type for row numbers.
@@ -116,10 +121,6 @@ impl ExtensionType for RowNumber {
 
     fn try_new(data_type: &DataType, _metadata: Self::Metadata) -> Result<Self, ArrowError> {
         Self.supports_data_type(data_type).map(|_| Self)
-    }
-
-    fn validate(data_type: &DataType, _metadata: Self::Metadata) -> Result<(), ArrowError> {
-        Self.supports_data_type(data_type)
     }
 }
 

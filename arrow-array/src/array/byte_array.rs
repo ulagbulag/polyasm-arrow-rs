@@ -21,12 +21,12 @@ use crate::iterator::ArrayIter;
 use crate::types::ByteArrayType;
 use crate::types::bytes::ByteArrayNativeType;
 use crate::{Array, ArrayAccessor, ArrayRef, OffsetSizeTrait, Scalar};
+use alloc::sync::Arc;
 use arrow_buffer::{ArrowNativeType, Buffer, MutableBuffer};
 use arrow_buffer::{NullBuffer, OffsetBuffer};
 use arrow_data::{ArrayData, ArrayDataBuilder};
 use arrow_schema::{ArrowError, DataType};
-use std::any::Any;
-use std::sync::Arc;
+use core::any::Any;
 
 /// An array of [variable length byte arrays](https://arrow.apache.org/docs/format/Columnar.html#variable-size-binary-layout)
 ///
@@ -187,7 +187,7 @@ impl<T: ByteArrayType> GenericByteArray<T> {
 
     /// Create a new [`Scalar`] from `v`
     pub fn new_scalar(value: impl AsRef<T::Native>) -> Scalar<Self> {
-        Scalar::new(Self::from_iter_values(std::iter::once(value)))
+        Scalar::new(Self::from_iter_values(core::iter::once(value)))
     }
 
     /// Create a new [`GenericByteArray`] where `value` is repeated `repeat_count` times.
@@ -223,7 +223,7 @@ impl<T: ByteArrayType> GenericByteArray<T> {
         let (_, data_len) = iter.size_hint();
         let data_len = data_len.expect("Iterator must be sized"); // panic if no upper bound.
 
-        let mut offsets = MutableBuffer::new((data_len + 1) * std::mem::size_of::<T::Offset>());
+        let mut offsets = MutableBuffer::new((data_len + 1) * core::mem::size_of::<T::Offset>());
         offsets.push(T::Offset::usize_as(0));
 
         let mut values = MutableBuffer::new(0);
@@ -319,7 +319,7 @@ impl<T: ByteArrayType> GenericByteArray<T> {
         // both of which should cleanly cast to isize on an architecture that supports
         // 32/64-bit offsets
         let b = unsafe {
-            std::slice::from_raw_parts(
+            core::slice::from_raw_parts(
                 self.value_data
                     .as_ptr()
                     .offset(start.to_isize().unwrap_unchecked()),
@@ -377,11 +377,11 @@ impl<T: ByteArrayType> GenericByteArray<T> {
         let data = self.into_data();
         let null_bit_buffer = data.nulls().map(|b| b.inner().sliced());
 
-        let element_len = std::mem::size_of::<T::Offset>();
+        let element_len = core::mem::size_of::<T::Offset>();
         let offset_buffer = data.buffers()[0]
             .slice_with_length(data.offset() * element_len, (len + 1) * element_len);
 
-        let element_len = std::mem::size_of::<u8>();
+        let element_len = core::mem::size_of::<u8>();
         let value_buffer = data.buffers()[1]
             .slice_with_length(data.offset() * element_len, value_len * element_len);
 
@@ -452,11 +452,11 @@ impl<T: ByteArrayType> GenericByteArray<T> {
     }
 }
 
-impl<T: ByteArrayType> std::fmt::Debug for GenericByteArray<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<T: ByteArrayType> core::fmt::Debug for GenericByteArray<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "{}{}Array\n[\n", T::Offset::PREFIX, T::PREFIX)?;
         print_long_array(self, f, |array, index, f| {
-            std::fmt::Debug::fmt(&array.value(index), f)
+            core::fmt::Debug::fmt(&array.value(index), f)
         })?;
         write!(f, "]")
     }
@@ -523,7 +523,7 @@ unsafe impl<T: ByteArrayType> Array for GenericByteArray<T> {
     }
 
     fn get_array_memory_size(&self) -> usize {
-        std::mem::size_of::<Self>() + self.get_buffer_memory_size()
+        core::mem::size_of::<Self>() + self.get_buffer_memory_size()
     }
 
     #[cfg(feature = "pool")]

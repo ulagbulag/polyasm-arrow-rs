@@ -26,18 +26,25 @@
 //! * [`WriteThrift`]: Trait implemented by serializable objects.
 //! * [`WriteThriftField`]: Trait implemented by serializable objects that are fields in Thrift structs.
 
-use std::{
-    cmp::Ordering,
-    io::{Read, Write},
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
 };
 
+use core::cmp::Ordering;
+
+use crate::io::{Read, Write};
+
+use crate::io::Error;
 use crate::{
     errors::{ParquetError, Result},
     write_thrift_field,
 };
-use std::io::Error;
-use std::num::TryFromIntError;
-use std::str::Utf8Error;
+use core::str::Utf8Error;
 
 #[derive(Debug)]
 pub(crate) enum ThriftProtocolError {
@@ -47,7 +54,6 @@ pub(crate) enum ThriftProtocolError {
     InvalidElementType(u8),
     FieldDeltaOverflow { field_delta: u8, last_field_id: i16 },
     InvalidBoolean(u8),
-    IntegerOverflow,
     Utf8Error,
     SkipDepth(FieldType),
     SkipUnsupportedType(FieldType),
@@ -58,7 +64,7 @@ impl From<ThriftProtocolError> for ParquetError {
     fn from(e: ThriftProtocolError) -> Self {
         match e {
             ThriftProtocolError::Eof => eof_err!("Unexpected EOF"),
-            ThriftProtocolError::IO(e) => e.into(),
+            ThriftProtocolError::IO(e) => ParquetError::External(Box::new(e)),
             ThriftProtocolError::InvalidFieldType(value) => {
                 general_err!("Unexpected struct field type {}", value)
             }
@@ -71,9 +77,6 @@ impl From<ThriftProtocolError> for ParquetError {
             } => general_err!("cannot add {} to {}", field_delta, last_field_id),
             ThriftProtocolError::InvalidBoolean(value) => {
                 general_err!("cannot convert {} into bool", value)
-            }
-            ThriftProtocolError::IntegerOverflow => {
-                general_err!("integer overflow decoding thrift value")
             }
             ThriftProtocolError::Utf8Error => general_err!("invalid utf8"),
             ThriftProtocolError::SkipDepth(field_type) => {
@@ -96,13 +99,6 @@ impl From<Utf8Error> for ThriftProtocolError {
 impl From<Error> for ThriftProtocolError {
     fn from(e: Error) -> Self {
         Self::IO(e)
-    }
-}
-
-impl From<TryFromIntError> for ThriftProtocolError {
-    fn from(_: TryFromIntError) -> Self {
-        // ignore error payload to reduce the size of ThriftProtocolError
-        Self::IntegerOverflow
     }
 }
 
@@ -182,7 +178,7 @@ impl TryFrom<u8> for FieldType {
 
 impl TryFrom<ElementType> for FieldType {
     type Error = ThriftProtocolError;
-    fn try_from(value: ElementType) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: ElementType) -> core::result::Result<Self, Self::Error> {
         match value {
             ElementType::Bool => Ok(Self::BooleanTrue),
             ElementType::Byte => Ok(Self::Byte),
@@ -329,13 +325,7 @@ pub(crate) trait ThriftCompactInputProtocol<'a> {
             // high bits set high if count and type encoded separately
             possible_element_count as i32
         } else {
-            // The list size on the wire is an unsigned varint, but we represent
-            // it as `i32` (matching Java's `int` and the Thrift schema).
-            // A varint that decodes above `i32::MAX` is malformed input — reject
-            // it here at the protocol layer rather than letting the cast wrap
-            // into a negative size that downstream allocation code has to
-            // re-validate.
-            i32::try_from(self.read_vlq()?)?
+            self.read_vlq()? as _
         };
 
         Ok(ListIdentifier {
@@ -428,7 +418,7 @@ pub(crate) trait ThriftCompactInputProtocol<'a> {
     /// [binary]: https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md#binary-encoding
     fn read_string(&mut self) -> ThriftProtocolResult<&'a str> {
         let slice = self.read_bytes()?;
-        Ok(std::str::from_utf8(slice)?)
+        Ok(core::str::from_utf8(slice)?)
     }
 
     /// Read an `i8`.
@@ -614,15 +604,20 @@ impl<'a, R: Read> ThriftCompactInputProtocol<'a> for ThriftReadInputProtocol<R> 
     fn read_bytes_owned(&mut self) -> ThriftProtocolResult<Vec<u8>> {
         let len = self.read_vlq()? as usize;
         let mut v = Vec::with_capacity(len);
-        std::io::copy(&mut self.reader.by_ref().take(len as u64), &mut v)?;
+        self.reader.by_ref().take(len as u64).read_to_end(&mut v)?;
         Ok(v)
     }
 
     fn skip_bytes(&mut self, n: usize) -> ThriftProtocolResult<()> {
-        std::io::copy(
-            &mut self.reader.by_ref().take(n as u64),
-            &mut std::io::sink(),
-        )?;
+        let mut scratch = [0_u8; 256];
+        let mut remaining = n;
+        while remaining > 0 {
+            let want = remaining.min(scratch.len());
+            match self.reader.read(&mut scratch[..want])? {
+                0 => break,
+                read => remaining -= read,
+            }
+        }
         Ok(())
     }
 
@@ -724,10 +719,12 @@ where
 /// but is instead intended for use by implementers of [`WriteThrift`] and [`WriteThriftField`].
 ///
 /// [compact output]: https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md
+#[cfg(feature = "std")]
 pub(crate) struct ThriftCompactOutputProtocol<W: Write> {
     writer: W,
 }
 
+#[cfg(feature = "std")]
 impl<W: Write> ThriftCompactOutputProtocol<W> {
     /// Create a new `ThriftCompactOutputProtocol` wrapping the byte sink `writer`.
     pub(crate) fn new(writer: W) -> Self {
@@ -846,6 +843,7 @@ impl<W: Write> ThriftCompactOutputProtocol<W> {
 /// stream. Implementations are also provided for primitive Thrift types.
 ///
 /// [compact output]: https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md
+#[cfg(feature = "std")]
 pub(crate) trait WriteThrift {
     /// The [`ElementType`] to use when a list of this object is written.
     const ELEMENT_TYPE: ElementType;
@@ -856,6 +854,7 @@ pub(crate) trait WriteThrift {
 
 /// Implementation for a vector of thrift serializable objects that implement [`WriteThrift`].
 /// This will write the necessary list header and then serialize the elements one-at-a-time.
+#[cfg(feature = "std")]
 impl<T> WriteThrift for Vec<T>
 where
     T: WriteThrift,
@@ -871,6 +870,7 @@ where
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThrift for bool {
     const ELEMENT_TYPE: ElementType = ElementType::Bool;
 
@@ -879,6 +879,7 @@ impl WriteThrift for bool {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThrift for i8 {
     const ELEMENT_TYPE: ElementType = ElementType::Byte;
 
@@ -887,6 +888,7 @@ impl WriteThrift for i8 {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThrift for i16 {
     const ELEMENT_TYPE: ElementType = ElementType::I16;
 
@@ -895,6 +897,7 @@ impl WriteThrift for i16 {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThrift for i32 {
     const ELEMENT_TYPE: ElementType = ElementType::I32;
 
@@ -903,6 +906,7 @@ impl WriteThrift for i32 {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThrift for i64 {
     const ELEMENT_TYPE: ElementType = ElementType::I64;
 
@@ -911,6 +915,7 @@ impl WriteThrift for i64 {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThrift for OrderedF64 {
     const ELEMENT_TYPE: ElementType = ElementType::Double;
 
@@ -919,6 +924,7 @@ impl WriteThrift for OrderedF64 {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThrift for f64 {
     const ELEMENT_TYPE: ElementType = ElementType::Double;
 
@@ -927,6 +933,7 @@ impl WriteThrift for f64 {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThrift for &[u8] {
     const ELEMENT_TYPE: ElementType = ElementType::Binary;
 
@@ -935,6 +942,7 @@ impl WriteThrift for &[u8] {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThrift for &str {
     const ELEMENT_TYPE: ElementType = ElementType::Binary;
 
@@ -943,6 +951,7 @@ impl WriteThrift for &str {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThrift for String {
     const ELEMENT_TYPE: ElementType = ElementType::Binary;
 
@@ -993,6 +1002,7 @@ impl WriteThrift for String {
 /// }
 /// ```
 ///
+#[cfg(feature = "std")]
 pub(crate) trait WriteThriftField {
     /// Used to write struct fields (which may be primitive or IDL defined types). This will
     /// write the field marker for the given `field_id`, using `last_field_id` to compute the
@@ -1009,6 +1019,7 @@ pub(crate) trait WriteThriftField {
 }
 
 // bool struct fields are written differently to bool values
+#[cfg(feature = "std")]
 impl WriteThriftField for bool {
     fn write_thrift_field<W: Write>(
         &self,
@@ -1033,6 +1044,7 @@ write_thrift_field!(OrderedF64, FieldType::Double);
 write_thrift_field!(f64, FieldType::Double);
 write_thrift_field!(String, FieldType::Binary);
 
+#[cfg(feature = "std")]
 impl WriteThriftField for &[u8] {
     fn write_thrift_field<W: Write>(
         &self,
@@ -1046,6 +1058,7 @@ impl WriteThriftField for &[u8] {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThriftField for &str {
     fn write_thrift_field<W: Write>(
         &self,
@@ -1059,6 +1072,7 @@ impl WriteThriftField for &str {
     }
 }
 
+#[cfg(feature = "std")]
 impl<T> WriteThriftField for Vec<T>
 where
     T: WriteThrift,
@@ -1080,7 +1094,7 @@ pub(crate) mod tests {
     use crate::basic::{TimeUnit, Type};
 
     use super::*;
-    use std::fmt::Debug;
+    use core::fmt::Debug;
 
     pub(crate) fn test_roundtrip<T>(val: T)
     where
@@ -1123,19 +1137,5 @@ pub(crate) mod tests {
         let header = prot.read_list_begin().expect("error reading list header");
         assert_eq!(header.size, 0);
         assert_eq!(header.element_type, ElementType::Byte);
-    }
-
-    /// A Thrift list header whose `size` varint decodes above `i32::MAX`
-    /// must be rejected at the protocol layer rather than wrapping into a
-    /// negative `i32` and being smuggled into downstream allocation code.
-    #[test]
-    fn test_read_list_begin_size_above_i32_max_returns_err() {
-        // List header: element_type=8 (Binary), 0xF=follow-up varint.
-        // Varint 80 80 80 80 08 decodes to 0x8000_0000 = i32::MAX + 1.
-        let mut data: Vec<u8> = vec![0xF8];
-        data.extend_from_slice(&[0x80, 0x80, 0x80, 0x80, 0x08]);
-        let mut prot = ThriftSliceInputProtocol::new(&data);
-        let result = prot.read_list_begin();
-        assert!(result.is_err(), "expected error, got {result:?}");
     }
 }

@@ -15,12 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use alloc::sync::Arc;
 use arrow_buffer::{Buffer, NullBuffer, ScalarBuffer};
 use arrow_data::{ArrayData, ArrayDataBuilder};
 use arrow_schema::{ArrowError, DataType, FieldRef};
-use std::any::Any;
-use std::ops::Add;
-use std::sync::Arc;
+use core::any::Any;
+use core::ops::Add;
 
 use crate::array::{make_array, print_long_array};
 use crate::builder::{GenericListViewBuilder, PrimitiveBuilder};
@@ -29,6 +29,7 @@ use crate::{
     Array, ArrayAccessor, ArrayRef, ArrowPrimitiveType, FixedSizeListArray, GenericListArray,
     OffsetSizeTrait, new_empty_array,
 };
+use alloc::vec::Vec;
 
 /// A [`GenericListViewArray`] of variable size lists, storing offsets as `i32`.
 pub type ListViewArray = GenericListViewArray<i32>;
@@ -221,35 +222,6 @@ impl<OffsetSize: OffsetSizeTrait> GenericListViewArray<OffsetSize> {
         nulls: Option<NullBuffer>,
     ) -> Self {
         Self::try_new(field, offsets, sizes, values, nulls).unwrap()
-    }
-
-    /// Create a new [`GenericListViewArray`] from the provided parts without validation
-    ///
-    /// See [`Self::try_new`] for the checked version of this function, and the
-    /// documentation of that function for the invariants that must be upheld.
-    ///
-    /// # Safety
-    ///
-    /// The parts must form a valid [`ListViewArray`] or [`LargeListViewArray`] according
-    /// to the Arrow spec.
-    pub unsafe fn new_unchecked(
-        field: FieldRef,
-        offsets: ScalarBuffer<OffsetSize>,
-        sizes: ScalarBuffer<OffsetSize>,
-        values: ArrayRef,
-        nulls: Option<NullBuffer>,
-    ) -> Self {
-        if cfg!(feature = "force_validate") {
-            return Self::new(field, offsets, sizes, values, nulls);
-        }
-
-        Self {
-            data_type: Self::DATA_TYPE_CONSTRUCTOR(field),
-            nulls,
-            values,
-            value_offsets: offsets,
-            value_sizes: sizes,
-        }
     }
 
     /// Create a new [`GenericListViewArray`] of length `len` where all values are null
@@ -507,7 +479,7 @@ unsafe impl<OffsetSize: OffsetSizeTrait> Array for GenericListViewArray<OffsetSi
     }
 
     fn get_array_memory_size(&self) -> usize {
-        let mut size = std::mem::size_of::<Self>() + self.values.get_array_memory_size();
+        let mut size = core::mem::size_of::<Self>() + self.values.get_array_memory_size();
         size += self.value_offsets.inner().capacity();
         size += self.value_sizes.inner().capacity();
         if let Some(n) = self.nulls.as_ref() {
@@ -532,19 +504,19 @@ impl<OffsetSize: OffsetSizeTrait> super::ListLikeArray for GenericListViewArray<
         self.values()
     }
 
-    fn element_range(&self, index: usize) -> std::ops::Range<usize> {
+    fn element_range(&self, index: usize) -> core::ops::Range<usize> {
         let offset = self.value_offsets()[index].as_usize();
         let size = self.value_sizes()[index].as_usize();
         offset..(offset + size)
     }
 }
 
-impl<OffsetSize: OffsetSizeTrait> std::fmt::Debug for GenericListViewArray<OffsetSize> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<OffsetSize: OffsetSizeTrait> core::fmt::Debug for GenericListViewArray<OffsetSize> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let prefix = OffsetSize::PREFIX;
         write!(f, "{prefix}ListViewArray\n[\n")?;
         print_long_array(self, f, |array, index, f| {
-            std::fmt::Debug::fmt(&array.value(index), f)
+            core::fmt::Debug::fmt(&array.value(index), f)
         })?;
         write!(f, "]")
     }
@@ -603,7 +575,7 @@ impl<OffsetSize: OffsetSizeTrait> From<FixedSizeListArray> for GenericListViewAr
             _ => unreachable!(),
         };
         let mut acc = 0_usize;
-        let iter = std::iter::repeat_n(size, value.len());
+        let iter = core::iter::repeat_n(size, value.len());
         let mut sizes = Vec::with_capacity(iter.size_hint().0);
         let mut offsets = Vec::with_capacity(iter.size_hint().0);
 

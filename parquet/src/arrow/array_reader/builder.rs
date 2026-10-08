@@ -15,13 +15,25 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::sync::{Arc, RwLock};
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+use alloc::sync::Arc;
+
+use crate::sync::RwLock;
 
 use arrow_schema::{DataType, Fields, SchemaBuilder};
 
 use crate::arrow::ProjectionMask;
 use crate::arrow::array_reader::byte_view_array::make_byte_view_array_reader;
 use crate::arrow::array_reader::cached_array_reader::CacheRole;
+#[cfg(feature = "std")]
 use crate::arrow::array_reader::cached_array_reader::CachedArrayReader;
 use crate::arrow::array_reader::empty_array::make_empty_array_reader;
 use crate::arrow::array_reader::fixed_len_byte_array::make_fixed_len_byte_array_reader;
@@ -33,7 +45,6 @@ use crate::arrow::array_reader::{
     NullArrayReader, PrimitiveArrayReader, RowGroups, StructArrayReader,
     make_byte_array_dictionary_reader, make_byte_array_reader,
 };
-use crate::arrow::arrow_reader::DEFAULT_BATCH_SIZE;
 use crate::arrow::arrow_reader::metrics::ArrowReaderMetrics;
 use crate::arrow::schema::{ParquetField, ParquetFieldType, VirtualColumnType};
 use crate::basic::Type as PhysicalType;
@@ -97,28 +108,16 @@ pub struct ArrayReaderBuilder<'a> {
     parquet_metadata: Option<&'a ParquetMetaData>,
     /// metrics
     metrics: &'a ArrowReaderMetrics,
-    /// Batch size for pre-allocating internal buffers
-    batch_size: usize,
 }
 
 impl<'a> ArrayReaderBuilder<'a> {
-    /// Create a new `ArrayReaderBuilder`
     pub fn new(row_groups: &'a dyn RowGroups, metrics: &'a ArrowReaderMetrics) -> Self {
         Self {
             row_groups,
             cache_options: None,
             parquet_metadata: None,
             metrics,
-            batch_size: DEFAULT_BATCH_SIZE,
         }
-    }
-
-    /// Set the batch size used to pre-allocate internal buffers.
-    ///
-    /// This avoids reallocations when reading the first batch of data.
-    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
-        self.batch_size = batch_size;
-        self
     }
 
     /// Add cache options to the builder
@@ -166,7 +165,18 @@ impl<'a> ArrayReaderBuilder<'a> {
                     return Ok(Some(reader));
                 };
 
-                if cache_options.projection_mask.leaf_included(col_idx) {
+                if !cache_options.projection_mask.leaf_included(col_idx) {
+                    return Ok(Some(reader));
+                }
+                // The cached reader re-slices its cache with `arrow-select`,
+                // which is `std`-only here; without it the column is simply
+                // decoded again rather than served from the cache.
+                #[cfg(not(feature = "std"))]
+                {
+                    Ok(Some(reader))
+                }
+                #[cfg(feature = "std")]
+                {
                     Ok(Some(Box::new(CachedArrayReader::new(
                         reader,
                         Arc::clone(cache_options.cache),
@@ -174,8 +184,6 @@ impl<'a> ArrayReaderBuilder<'a> {
                         cache_options.role,
                         self.metrics.clone(), // cheap clone
                     ))))
-                } else {
-                    Ok(Some(reader))
                 }
             }
             ParquetFieldType::Virtual(virtual_type) => {
@@ -422,87 +430,60 @@ impl<'a> ArrayReaderBuilder<'a> {
         let page_iterator = self.row_groups.column_chunks(col_idx)?;
         let arrow_type = Some(field.arrow_type.clone());
 
-        // LogicalType::Unknown maps to DataType::Null. In the past it has been assumed
-        // that only INT32 can have this annotation, but this is not required by the Parquet
-        // specification. Since this can only annotate an entirely null column, the data type
-        // used for the NullArrayReader should be irrelevant. It's just needed to read the
-        // repetition and definition level data.
-        if matches!(arrow_type, Some(DataType::Null)) {
-            let reader = Box::new(NullArrayReader::<Int32Type>::new(
-                page_iterator,
-                column_desc,
-                self.batch_size,
-            )?) as _;
-            return Ok(Some(reader));
-        }
-
         let reader = match physical_type {
             PhysicalType::BOOLEAN => Box::new(PrimitiveArrayReader::<BoolType>::new(
                 page_iterator,
                 column_desc,
                 arrow_type,
-                self.batch_size,
             )?) as _,
-            PhysicalType::INT32 => Box::new(PrimitiveArrayReader::<Int32Type>::new(
-                page_iterator,
-                column_desc,
-                arrow_type,
-                self.batch_size,
-            )?) as _,
+            PhysicalType::INT32 => {
+                if let Some(DataType::Null) = arrow_type {
+                    Box::new(NullArrayReader::<Int32Type>::new(
+                        page_iterator,
+                        column_desc,
+                    )?) as _
+                } else {
+                    Box::new(PrimitiveArrayReader::<Int32Type>::new(
+                        page_iterator,
+                        column_desc,
+                        arrow_type,
+                    )?) as _
+                }
+            }
             PhysicalType::INT64 => Box::new(PrimitiveArrayReader::<Int64Type>::new(
                 page_iterator,
                 column_desc,
                 arrow_type,
-                self.batch_size,
             )?) as _,
             PhysicalType::INT96 => Box::new(PrimitiveArrayReader::<Int96Type>::new(
                 page_iterator,
                 column_desc,
                 arrow_type,
-                self.batch_size,
             )?) as _,
             PhysicalType::FLOAT => Box::new(PrimitiveArrayReader::<FloatType>::new(
                 page_iterator,
                 column_desc,
                 arrow_type,
-                self.batch_size,
             )?) as _,
             PhysicalType::DOUBLE => Box::new(PrimitiveArrayReader::<DoubleType>::new(
                 page_iterator,
                 column_desc,
                 arrow_type,
-                self.batch_size,
             )?) as _,
             PhysicalType::BYTE_ARRAY => match arrow_type {
-                Some(DataType::Dictionary(_, _)) => make_byte_array_dictionary_reader(
-                    page_iterator,
-                    column_desc,
-                    arrow_type,
-                    self.batch_size,
-                )?,
-                Some(DataType::Utf8View | DataType::BinaryView) => make_byte_view_array_reader(
-                    page_iterator,
-                    column_desc,
-                    arrow_type,
-                    self.batch_size,
-                )?,
-                _ => {
-                    make_byte_array_reader(page_iterator, column_desc, arrow_type, self.batch_size)?
+                Some(DataType::Dictionary(_, _)) => {
+                    make_byte_array_dictionary_reader(page_iterator, column_desc, arrow_type)?
                 }
+                Some(DataType::Utf8View | DataType::BinaryView) => {
+                    make_byte_view_array_reader(page_iterator, column_desc, arrow_type)?
+                }
+                _ => make_byte_array_reader(page_iterator, column_desc, arrow_type)?,
             },
             PhysicalType::FIXED_LEN_BYTE_ARRAY => match arrow_type {
-                Some(DataType::Dictionary(_, _)) => make_byte_array_dictionary_reader(
-                    page_iterator,
-                    column_desc,
-                    arrow_type,
-                    self.batch_size,
-                )?,
-                _ => make_fixed_len_byte_array_reader(
-                    page_iterator,
-                    column_desc,
-                    arrow_type,
-                    self.batch_size,
-                )?,
+                Some(DataType::Dictionary(_, _)) => {
+                    make_byte_array_dictionary_reader(page_iterator, column_desc, arrow_type)?
+                }
+                _ => make_fixed_len_byte_array_reader(page_iterator, column_desc, arrow_type)?,
             },
         };
         Ok(Some(reader))
@@ -553,8 +534,8 @@ mod tests {
     use crate::arrow::schema::virtual_type::RowNumber;
     use crate::file::reader::{FileReader, SerializedFileReader};
     use crate::util::test_common::file_util::get_test_file;
+    use alloc::sync::Arc;
     use arrow::datatypes::Field;
-    use std::sync::Arc;
 
     #[test]
     fn test_create_array_reader() {
@@ -573,7 +554,6 @@ mod tests {
 
         let metrics = ArrowReaderMetrics::disabled();
         let array_reader = ArrayReaderBuilder::new(&file_reader, &metrics)
-            .with_batch_size(DEFAULT_BATCH_SIZE)
             .build_array_reader(fields.as_ref(), &mask)
             .unwrap();
 
@@ -601,13 +581,12 @@ mod tests {
             file_metadata.schema_descr(),
             ProjectionMask::all(),
             file_metadata.key_value_metadata(),
-            std::slice::from_ref(&row_number_field),
+            core::slice::from_ref(&row_number_field),
         )
         .unwrap();
 
         let metrics = ArrowReaderMetrics::disabled();
         let array_reader = ArrayReaderBuilder::new(&file_reader, &metrics)
-            .with_batch_size(DEFAULT_BATCH_SIZE)
             .with_parquet_metadata(file_reader.metadata())
             .build_array_reader(fields.as_ref(), &mask)
             .unwrap();

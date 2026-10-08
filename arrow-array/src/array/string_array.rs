@@ -17,6 +17,8 @@
 
 use crate::types::GenericStringType;
 use crate::{GenericBinaryArray, GenericByteArray, GenericListArray, OffsetSizeTrait};
+use alloc::string::String;
+use alloc::vec::Vec;
 use arrow_schema::ArrowError;
 
 /// A [`GenericByteArray`] for storing `str`
@@ -159,10 +161,10 @@ mod tests {
     use crate::Array;
     use crate::builder::{ListBuilder, PrimitiveBuilder, StringBuilder};
     use crate::types::UInt8Type;
+    use alloc::sync::Arc;
     use arrow_buffer::Buffer;
     use arrow_data::ArrayData;
     use arrow_schema::{DataType, Field};
-    use std::sync::Arc;
 
     #[test]
     fn test_string_array_from_u8_slice() {

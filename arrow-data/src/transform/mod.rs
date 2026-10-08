@@ -22,12 +22,15 @@
 
 use super::{ArrayData, ArrayDataBuilder, ByteView, data::new_buffers};
 use crate::bit_mask::set_bits;
+use alloc::boxed::Box;
+use alloc::vec;
+use alloc::vec::Vec;
 use arrow_buffer::buffer::{BooleanBuffer, NullBuffer};
 use arrow_buffer::{ArrowNativeType, Buffer, MutableBuffer, bit_util, i256};
 use arrow_schema::{ArrowError, DataType, IntervalUnit, UnionMode};
+use core::mem;
 use half::f16;
 use num_integer::Integer;
-use std::mem;
 
 mod boolean;
 mod fixed_binary;
@@ -179,8 +182,8 @@ pub struct MutableArrayData<'a> {
     extend_nulls: ExtendNulls,
 }
 
-impl std::fmt::Debug for MutableArrayData<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl core::fmt::Debug for MutableArrayData<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         // ignores the closures.
         f.debug_struct("MutableArrayData")
             .field("data", &self.data)
@@ -813,8 +816,8 @@ impl<'a> MutableArrayData<'a> {
         };
 
         let nulls = match data.data_type {
-            // RunEndEncoded, Null, and Union arrays cannot have top-level null bitmasks
-            DataType::RunEndEncoded(_, _) | DataType::Null | DataType::Union(_, _) => None,
+            // RunEndEncoded and Null arrays carry zero top-level null bitmasks
+            DataType::RunEndEncoded(_, _) | DataType::Null => None,
             _ => data
                 .null_buffer
                 .map(|nulls| {

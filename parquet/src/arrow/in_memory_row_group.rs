@@ -15,6 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::arrow::ProjectionMask;
 use crate::arrow::array_reader::RowGroups;
 use crate::arrow::arrow_reader::RowSelection;
@@ -23,9 +32,9 @@ use crate::errors::ParquetError;
 use crate::file::metadata::{ParquetMetaData, RowGroupMetaData};
 use crate::file::page_index::offset_index::OffsetIndexMetaData;
 use crate::file::reader::{ChunkReader, Length, SerializedPageReader};
+use alloc::sync::Arc;
 use bytes::{Buf, Bytes};
-use std::ops::Range;
-use std::sync::Arc;
+use core::ops::Range;
 
 /// An in-memory collection of column chunks
 #[derive(Debug)]
@@ -228,7 +237,9 @@ impl RowGroups for InMemoryRowGroup<'_> {
     }
 
     fn row_groups(&self) -> Box<dyn Iterator<Item = &RowGroupMetaData> + '_> {
-        Box::new(std::iter::once(self.metadata.row_group(self.row_group_idx)))
+        Box::new(core::iter::once(
+            self.metadata.row_group(self.row_group_idx),
+        ))
     }
 
     fn metadata(&self) -> &ParquetMetaData {
@@ -290,10 +301,19 @@ impl Length for ColumnChunkData {
 }
 
 impl ChunkReader for ColumnChunkData {
+    #[cfg(feature = "std")]
     type T = bytes::buf::Reader<Bytes>;
+    #[cfg(not(feature = "std"))]
+    type T = crate::io::Cursor<Bytes>;
 
+    #[cfg(feature = "std")]
     fn get_read(&self, start: u64) -> crate::errors::Result<Self::T> {
         Ok(self.get(start)?.reader())
+    }
+
+    #[cfg(not(feature = "std"))]
+    fn get_read(&self, start: u64) -> crate::errors::Result<Self::T> {
+        Ok(crate::io::Cursor::new(self.get(start)?))
     }
 
     fn get_bytes(&self, start: u64, length: usize) -> crate::errors::Result<Bytes> {

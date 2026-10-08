@@ -15,15 +15,25 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::arrow::ProjectionMask;
 use crate::errors::ParquetError;
 use crate::file::page_index::offset_index::{OffsetIndexMetaData, PageLocation};
+use alloc::collections::VecDeque;
 use arrow_array::{Array, BooleanArray};
 use arrow_buffer::{BooleanBuffer, BooleanBufferBuilder};
+#[cfg(feature = "std")]
 use arrow_select::filter::SlicesIterator;
-use std::cmp::Ordering;
-use std::collections::VecDeque;
-use std::ops::Range;
+use core::cmp::Ordering;
+use core::ops::Range;
 
 /// Policy for picking a strategy to materialise [`RowSelection`] during execution.
 ///
@@ -34,6 +44,7 @@ pub enum RowSelectionPolicy {
     /// Use a queue of [`RowSelector`] values
     Selectors,
     /// Use a boolean mask to materialise the selection
+    #[cfg(feature = "std")]
     Mask,
     /// Choose between [`Self::Mask`] and [`Self::Selectors`] based on selector density
     Auto {
@@ -57,6 +68,7 @@ pub(crate) enum RowSelectionStrategy {
     /// Use a queue of [`RowSelector`] values
     Selectors,
     /// Use a boolean mask to materialise the selection
+    #[cfg(feature = "std")]
     Mask,
 }
 
@@ -146,6 +158,7 @@ impl RowSelection {
     /// # Panic
     ///
     /// Panics if any of the [`BooleanArray`] contain nulls
+    #[cfg(feature = "std")]
     pub fn from_filters(filters: &[BooleanArray]) -> Self {
         let mut next_offset = 0;
         let total_rows = filters.iter().map(|x| x.len()).sum();
@@ -296,7 +309,7 @@ impl RowSelection {
         let split_idx = match find {
             Some(idx) => idx,
             None => {
-                let selectors = std::mem::take(&mut self.selectors);
+                let selectors = core::mem::take(&mut self.selectors);
                 return Self { selectors };
             }
         };
@@ -315,7 +328,7 @@ impl RowSelection {
         }
         next.row_count = overflow;
 
-        std::mem::swap(&mut remaining, &mut self.selectors);
+        core::mem::swap(&mut remaining, &mut self.selectors);
         Self {
             selectors: remaining,
         }
@@ -625,7 +638,7 @@ fn intersect_row_selections(left: &[RowSelector], right: &[RowSelector]) -> RowS
     let mut l_iter = left.iter().copied().peekable();
     let mut r_iter = right.iter().copied().peekable();
 
-    let iter = std::iter::from_fn(move || {
+    let iter = core::iter::from_fn(move || {
         loop {
             let l = l_iter.peek_mut();
             let r = r_iter.peek_mut();
@@ -687,7 +700,7 @@ fn union_row_selections(left: &[RowSelector], right: &[RowSelector]) -> RowSelec
     let mut l_iter = left.iter().copied().peekable();
     let mut r_iter = right.iter().copied().peekable();
 
-    let iter = std::iter::from_fn(move || {
+    let iter = core::iter::from_fn(move || {
         loop {
             let l = l_iter.peek_mut();
             let r = r_iter.peek_mut();
@@ -895,6 +908,7 @@ pub enum RowSelectionCursor {
     /// Reading all rows
     All,
     /// Use a bitmask to back the selection (dense selections)
+    #[cfg(feature = "std")]
     Mask(MaskCursor),
     /// Use a queue of selectors to back the selection (sparse selections)
     Selectors(SelectorsCursor),
@@ -902,6 +916,7 @@ pub enum RowSelectionCursor {
 
 impl RowSelectionCursor {
     /// Create a [`MaskCursor`] cursor backed by a bitmask, from an existing set of selectors
+    #[cfg(feature = "std")]
     pub(crate) fn new_mask_from_selectors(selectors: Vec<RowSelector>) -> Self {
         Self::Mask(MaskCursor {
             mask: boolean_mask_from_selectors(&selectors),
@@ -923,6 +938,7 @@ impl RowSelectionCursor {
     }
 }
 
+#[cfg(feature = "std")]
 fn boolean_mask_from_selectors(selectors: &[RowSelector]) -> BooleanBuffer {
     let total_rows: usize = selectors.iter().map(|s| s.row_count).sum();
     let mut builder = BooleanBufferBuilder::new(total_rows);

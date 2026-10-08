@@ -17,6 +17,7 @@
 
 use super::{_MutableArrayData, Extend};
 use crate::ArrayData;
+use alloc::boxed::Box;
 use arrow_schema::DataType;
 
 pub(super) fn build_extend(array: &ArrayData) -> Extend<'_> {

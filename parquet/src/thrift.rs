@@ -17,6 +17,15 @@
 
 //! Custom thrift definitions
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 pub use thrift::protocol::TCompactOutputProtocol;
 use thrift::protocol::{TInputProtocol, TOutputProtocol};
 

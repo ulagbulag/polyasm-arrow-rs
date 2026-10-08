@@ -17,6 +17,7 @@
 
 use crate::ArrowNativeType;
 use crate::buffer::ScalarBuffer;
+use alloc_crate::{vec, vec::Vec};
 
 /// A buffer of monotonically increasing, positive integers used to store run-ends.
 ///

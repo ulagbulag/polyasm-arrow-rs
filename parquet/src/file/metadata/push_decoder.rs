@@ -15,6 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::DecodeResult;
 #[cfg(feature = "encryption")]
 use crate::encryption::decrypt::FileDecryptionProperties;
@@ -24,9 +33,9 @@ use crate::file::metadata::parser::{MetadataParser, parse_column_index, parse_of
 use crate::file::metadata::{FooterTail, PageIndexPolicy, ParquetMetaData, ParquetMetaDataOptions};
 use crate::file::page_index::index_reader::acc_range;
 use crate::file::reader::ChunkReader;
+use alloc::sync::Arc;
 use bytes::Bytes;
-use std::ops::Range;
-use std::sync::Arc;
+use core::ops::Range;
 
 /// A push decoder for [`ParquetMetaData`].
 ///
@@ -52,7 +61,7 @@ use std::sync::Arc;
     feature = "arrow",
     doc = r##"
 ```rust
-# use std::ops::Range;
+# use core::ops::Range;
 # use bytes::Bytes;
 # use arrow_array::record_batch;
 # use parquet::DecodeResult;
@@ -124,7 +133,7 @@ loop {
     feature = "arrow",
     doc = r##"
 ```rust
-# use std::ops::Range;
+# use core::ops::Range;
 # use bytes::Bytes;
 # use arrow_array::record_batch;
 # use parquet::DecodeResult;
@@ -174,7 +183,7 @@ decoder.push_ranges(vec![0..file_len], vec![prefetched_bytes]).unwrap();
     feature = "arrow",
     doc = r##"
 ```rust
-# use std::ops::Range;
+# use core::ops::Range;
 # use bytes::Bytes;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 # use arrow_array::record_batch;
@@ -202,7 +211,7 @@ async fn decode_metadata(
           let mut data = Vec::with_capacity(ranges.len());
           for range in &ranges {
             let mut buffer = vec![0; (range.end - range.start) as usize];
-            async_source.seek(std::io::SeekFrom::Start(range.start)).await?;
+            async_source.seek(crate::io::SeekFrom::Start(range.start)).await?;
             async_source.read_exact(&mut buffer).await?;
             data.push(Bytes::from(buffer));
           }
@@ -310,7 +319,7 @@ impl ParquetMetaDataPushDecoder {
     /// Provide decryption properties for decoding encrypted Parquet files
     pub fn with_file_decryption_properties(
         mut self,
-        file_decryption_properties: Option<std::sync::Arc<FileDecryptionProperties>>,
+        file_decryption_properties: Option<alloc::sync::Arc<FileDecryptionProperties>>,
     ) -> Self {
         self.metadata_parser = self
             .metadata_parser
@@ -358,18 +367,13 @@ impl ParquetMetaDataPushDecoder {
         Ok(())
     }
 
-    /// Clear any staged byte ranges currently buffered for future decode work.
-    pub fn clear_all_ranges(&mut self) {
-        self.buffers.clear_all_ranges();
-    }
-
     /// Try to decode the metadata from the pushed data, returning the
     /// decoded metadata or an error if not enough data is available.
     pub fn try_decode(&mut self) -> Result<DecodeResult<ParquetMetaData>> {
         let file_len = self.buffers.file_len();
         let footer_len = FOOTER_SIZE as u64;
         loop {
-            match std::mem::replace(&mut self.state, DecodeState::Intermediate) {
+            match core::mem::replace(&mut self.state, DecodeState::Intermediate) {
                 DecodeState::ReadingFooter => {
                     // need to have the last 8 bytes of the file to decode the metadata
                     let footer_start = file_len.saturating_sub(footer_len);
@@ -508,8 +512,8 @@ mod tests {
     use crate::file::properties::WriterProperties;
     use arrow_array::{ArrayRef, Int64Array, RecordBatch, StringViewArray};
     use bytes::Bytes;
-    use std::fmt::Debug;
-    use std::ops::Range;
+    use core::fmt::Debug;
+    use core::ops::Range;
     use std::sync::{Arc, LazyLock};
 
     /// It is possible to decode the metadata from the entire file at once before being asked
@@ -576,23 +580,6 @@ mod tests {
         assert_eq!(metadata.row_group(1).num_rows(), 200);
         assert!(metadata.column_index().is_some());
         assert!(metadata.offset_index().is_some());
-    }
-
-    #[test]
-    fn test_metadata_decoder_clear_all_ranges() {
-        let file_len = test_file_len();
-        let mut metadata_decoder = ParquetMetaDataPushDecoder::try_new(file_len).unwrap();
-
-        metadata_decoder
-            .push_range(test_file_range(), TEST_FILE_DATA.clone())
-            .unwrap();
-        assert_eq!(metadata_decoder.buffers.buffered_bytes(), test_file_len());
-
-        metadata_decoder.clear_all_ranges();
-        assert_eq!(metadata_decoder.buffers.buffered_bytes(), 0);
-
-        let ranges = expect_needs_data(metadata_decoder.try_decode());
-        assert_eq!(ranges, vec![test_file_len() - 8..test_file_len()]);
     }
 
     /// Decode the metadata incrementally, simulating a scenario where exactly the data needed

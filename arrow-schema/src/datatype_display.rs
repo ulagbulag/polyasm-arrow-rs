@@ -16,8 +16,12 @@
 // under the License.
 
 use crate::DataType;
-use std::fmt::Display;
-use std::{collections::HashMap, fmt};
+use crate::MetadataMap as HashMap;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
+use core::fmt::Display;
 
 impl Display for DataType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -15,11 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::arrow::record_reader::buffer::ValuesBuffer;
+use alloc::sync::Arc;
 use arrow_array::{ArrayRef, BinaryViewArray, StringViewArray};
 use arrow_buffer::{Buffer, NullBuffer, ScalarBuffer};
 use arrow_schema::DataType as ArrowType;
-use std::sync::Arc;
 
 /// A buffer of view type byte arrays that can be converted into
 /// `GenericByteViewArray`
@@ -33,14 +42,6 @@ pub struct ViewBuffer {
 }
 
 impl ViewBuffer {
-    /// Create a new ViewBuffer with capacity for the specified number of views
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            views: Vec::with_capacity(capacity),
-            buffers: Vec::new(),
-        }
-    }
-
     pub fn is_empty(&self) -> bool {
         self.views.is_empty()
     }
@@ -49,6 +50,15 @@ impl ViewBuffer {
         let block_id = self.buffers.len() as u32;
         self.buffers.push(block);
         block_id
+    }
+
+    /// Directly append a view to the view array.
+    /// This is used when we create a StringViewArray from a dictionary whose values are StringViewArray.
+    ///
+    /// # Safety
+    /// The `view` must be a valid view as per the ByteView spec.
+    pub unsafe fn append_raw_view_unchecked(&mut self, view: u128) {
+        self.views.push(view);
     }
 
     /// Converts this into an [`ArrayRef`] with the provided `data_type` and `null_buffer`
@@ -71,10 +81,6 @@ impl ViewBuffer {
 }
 
 impl ValuesBuffer for ViewBuffer {
-    fn with_capacity(capacity: usize) -> Self {
-        Self::with_capacity(capacity)
-    }
-
     fn pad_nulls(
         &mut self,
         read_offset: usize,
@@ -97,7 +103,7 @@ mod tests {
 
     #[test]
     fn test_view_buffer_empty() {
-        let buffer = ViewBuffer::with_capacity(0);
+        let buffer = ViewBuffer::default();
         let array = buffer.into_array(None, &ArrowType::Utf8View);
         let strings = array
             .as_any()
@@ -108,14 +114,16 @@ mod tests {
 
     #[test]
     fn test_view_buffer_append_view() {
-        let mut buffer = ViewBuffer::with_capacity(0);
+        let mut buffer = ViewBuffer::default();
         let data = b"0123456789long string to test string view";
         let string_buffer = Buffer::from(data);
         let block_id = buffer.append_block(string_buffer);
 
-        buffer.views.push(make_view(&data[0..1], block_id, 0));
-        buffer.views.push(make_view(&data[1..10], block_id, 1));
-        buffer.views.push(make_view(&data[10..41], block_id, 10));
+        unsafe {
+            buffer.append_raw_view_unchecked(make_view(&data[0..1], block_id, 0));
+            buffer.append_raw_view_unchecked(make_view(&data[1..10], block_id, 1));
+            buffer.append_raw_view_unchecked(make_view(&data[10..41], block_id, 10));
+        }
 
         let array = buffer.into_array(None, &ArrowType::Utf8View);
         let string_array = array
@@ -134,14 +142,16 @@ mod tests {
 
     #[test]
     fn test_view_buffer_pad_null() {
-        let mut buffer = ViewBuffer::with_capacity(0);
+        let mut buffer = ViewBuffer::default();
         let data = b"0123456789long string to test string view";
         let string_buffer = Buffer::from(data);
         let block_id = buffer.append_block(string_buffer);
 
-        buffer.views.push(make_view(&data[0..1], block_id, 0));
-        buffer.views.push(make_view(&data[1..10], block_id, 1));
-        buffer.views.push(make_view(&data[10..41], block_id, 10));
+        unsafe {
+            buffer.append_raw_view_unchecked(make_view(&data[0..1], block_id, 0));
+            buffer.append_raw_view_unchecked(make_view(&data[1..10], block_id, 1));
+            buffer.append_raw_view_unchecked(make_view(&data[10..41], block_id, 10));
+        }
 
         let valid = [true, false, false, true, false, false, true];
         let valid_mask = Buffer::from_iter(valid.iter().copied());

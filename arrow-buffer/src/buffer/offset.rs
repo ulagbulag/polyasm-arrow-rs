@@ -17,7 +17,8 @@
 
 use crate::buffer::ScalarBuffer;
 use crate::{ArrowNativeType, MutableBuffer, NullBuffer, OffsetBufferBuilder};
-use std::ops::Deref;
+use alloc_crate::vec::Vec;
+use core::ops::Deref;
 
 /// A non-empty buffer of monotonically increasing, positive integers.
 ///
@@ -90,7 +91,7 @@ impl<O: ArrowNativeType> OffsetBuffer<O> {
 
     /// Create a new [`OffsetBuffer`] containing a single 0 value
     pub fn new_empty() -> Self {
-        let buffer = MutableBuffer::from_len_zeroed(std::mem::size_of::<O>());
+        let buffer = MutableBuffer::from_len_zeroed(core::mem::size_of::<O>());
         Self(buffer.into_buffer().into())
     }
 
@@ -98,7 +99,7 @@ impl<O: ArrowNativeType> OffsetBuffer<O> {
     pub fn new_zeroed(len: usize) -> Self {
         let len_bytes = len
             .checked_add(1)
-            .and_then(|o| o.checked_mul(std::mem::size_of::<O>()))
+            .and_then(|o| o.checked_mul(core::mem::size_of::<O>()))
             .expect("overflow");
         let buffer = MutableBuffer::from_len_zeroed(len_bytes);
         Self(buffer.into_buffer().into())

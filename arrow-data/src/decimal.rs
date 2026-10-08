@@ -24,6 +24,8 @@
 //! [`Decimal64`]: arrow_schema::DataType::Decimal64
 //! [`Decimal128`]: arrow_schema::DataType::Decimal128
 //! [`Decimal256`]: arrow_schema::DataType::Decimal256
+use alloc::format;
+use alloc::string::{String, ToString};
 use arrow_buffer::i256;
 use arrow_schema::ArrowError;
 

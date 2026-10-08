@@ -15,29 +15,49 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::any::Any;
-use std::marker::PhantomData;
-use std::sync::Arc;
+// `GenericByteViewBuilder` interns values through `hashbrown`, which comes with
+// `std` here, so the builder itself is gated on it. `make_view`/`make_inlined_view`
+// are free functions over plain bytes and stay available on both builds.
+#[cfg(feature = "std")]
+use alloc::sync::Arc;
+#[cfg(feature = "std")]
+use core::any::Any;
+#[cfg(feature = "std")]
+use core::marker::PhantomData;
 
+#[cfg(feature = "std")]
 use arrow_buffer::{Buffer, NullBufferBuilder, ScalarBuffer};
-use arrow_data::{ByteView, MAX_INLINE_VIEW_LEN};
+use arrow_data::ByteView;
+#[cfg(feature = "std")]
+use arrow_data::MAX_INLINE_VIEW_LEN;
+#[cfg(feature = "std")]
 use arrow_schema::ArrowError;
+#[cfg(feature = "std")]
 use hashbrown::HashTable;
+#[cfg(feature = "std")]
 use hashbrown::hash_table::Entry;
 
+#[cfg(feature = "std")]
 use crate::builder::{ArrayBuilder, BinaryLikeArrayBuilder, StringLikeArrayBuilder};
+#[cfg(feature = "std")]
 use crate::types::bytes::ByteArrayNativeType;
+#[cfg(feature = "std")]
 use crate::types::{BinaryViewType, ByteViewType, StringViewType};
+#[cfg(feature = "std")]
 use crate::{Array, ArrayRef, GenericByteViewArray};
 
+#[cfg(feature = "std")]
 const STARTING_BLOCK_SIZE: u32 = 8 * 1024; // 8KiB
+#[cfg(feature = "std")]
 const MAX_BLOCK_SIZE: u32 = 2 * 1024 * 1024; // 2MiB
 
+#[cfg(feature = "std")]
 enum BlockSizeGrowthStrategy {
     Fixed { size: u32 },
     Exponential { current_size: u32 },
 }
 
+#[cfg(feature = "std")]
 impl BlockSizeGrowthStrategy {
     fn next_size(&mut self) -> u32 {
         match self {
@@ -78,6 +98,7 @@ impl BlockSizeGrowthStrategy {
 /// when parsing data from a parquet data page. In such a case entire blocks can be appended
 /// using [`GenericByteViewBuilder::append_block`] and then views into this block appended
 /// using [`GenericByteViewBuilder::try_append_view`]
+#[cfg(feature = "std")]
 pub struct GenericByteViewBuilder<T: ByteViewType + ?Sized> {
     views_buffer: Vec<u128>,
     null_buffer_builder: NullBufferBuilder,
@@ -91,6 +112,7 @@ pub struct GenericByteViewBuilder<T: ByteViewType + ?Sized> {
     phantom: PhantomData<T>,
 }
 
+#[cfg(feature = "std")]
 impl<T: ByteViewType + ?Sized> GenericByteViewBuilder<T> {
     /// Creates a new [`GenericByteViewBuilder`].
     pub fn new() -> Self {
@@ -282,7 +304,7 @@ impl<T: ByteViewType + ?Sized> GenericByteViewBuilder<T> {
     #[inline]
     fn flush_in_progress(&mut self) {
         if !self.in_progress.is_empty() {
-            let f = Buffer::from_vec(std::mem::take(&mut self.in_progress));
+            let f = Buffer::from_vec(core::mem::take(&mut self.in_progress));
             self.push_completed(f)
         }
     }
@@ -472,7 +494,7 @@ impl<T: ByteViewType + ?Sized> GenericByteViewBuilder<T> {
         self.try_append_value(value)?;
         // Reuse the view (n-1) times
         let view = *self.views_buffer.last().unwrap();
-        self.views_buffer.extend(std::iter::repeat_n(view, n - 1));
+        self.views_buffer.extend(core::iter::repeat_n(view, n - 1));
         self.null_buffer_builder.append_n_non_nulls(n - 1);
         Ok(())
     }
@@ -487,12 +509,12 @@ impl<T: ByteViewType + ?Sized> GenericByteViewBuilder<T> {
     /// Builds the [`GenericByteViewArray`] and reset this builder
     pub fn finish(&mut self) -> GenericByteViewArray<T> {
         self.flush_in_progress();
-        let completed = std::mem::take(&mut self.completed);
+        let completed = core::mem::take(&mut self.completed);
         let nulls = self.null_buffer_builder.finish();
         if let Some((ht, _)) = self.string_tracker.as_mut() {
             ht.clear();
         }
-        let views = std::mem::take(&mut self.views_buffer);
+        let views = core::mem::take(&mut self.views_buffer);
         // SAFETY: valid by construction
         unsafe { GenericByteViewArray::new_unchecked(views.into(), completed, nulls) }
     }
@@ -518,26 +540,28 @@ impl<T: ByteViewType + ?Sized> GenericByteViewBuilder<T> {
 
     /// Return the allocated size of this builder in bytes, useful for memory accounting.
     pub fn allocated_size(&self) -> usize {
-        let views = self.views_buffer.capacity() * std::mem::size_of::<u128>();
+        let views = self.views_buffer.capacity() * core::mem::size_of::<u128>();
         let null = self.null_buffer_builder.allocated_size();
         let buffer_size = self.completed.iter().map(|b| b.capacity()).sum::<usize>();
         let in_progress = self.in_progress.capacity();
         let tracker = match &self.string_tracker {
-            Some((ht, _)) => ht.capacity() * std::mem::size_of::<usize>(),
+            Some((ht, _)) => ht.capacity() * core::mem::size_of::<usize>(),
             None => 0,
         };
         buffer_size + in_progress + tracker + views + null
     }
 }
 
+#[cfg(feature = "std")]
 impl<T: ByteViewType + ?Sized> Default for GenericByteViewBuilder<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: ByteViewType + ?Sized> std::fmt::Debug for GenericByteViewBuilder<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+#[cfg(feature = "std")]
+impl<T: ByteViewType + ?Sized> core::fmt::Debug for GenericByteViewBuilder<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}ViewBuilder", T::PREFIX)?;
         f.debug_struct("")
             .field("views_buffer", &self.views_buffer)
@@ -548,6 +572,7 @@ impl<T: ByteViewType + ?Sized> std::fmt::Debug for GenericByteViewBuilder<T> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<T: ByteViewType + ?Sized> ArrayBuilder for GenericByteViewBuilder<T> {
     fn len(&self) -> usize {
         self.null_buffer_builder.len()
@@ -574,6 +599,7 @@ impl<T: ByteViewType + ?Sized> ArrayBuilder for GenericByteViewBuilder<T> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<T: ByteViewType + ?Sized, V: AsRef<T::Native>> Extend<Option<V>>
     for GenericByteViewBuilder<T>
 {
@@ -604,11 +630,13 @@ impl<T: ByteViewType + ?Sized, V: AsRef<T::Native>> Extend<Option<V>>
 /// let actual: Vec<_> = array.iter().collect();
 /// assert_eq!(expected, actual);
 /// ```
+#[cfg(feature = "std")]
 pub type StringViewBuilder = GenericByteViewBuilder<StringViewType>;
 
+#[cfg(feature = "std")]
 impl StringLikeArrayBuilder for StringViewBuilder {
     fn type_name() -> &'static str {
-        std::any::type_name::<StringViewBuilder>()
+        core::any::type_name::<StringViewBuilder>()
     }
     fn with_capacity(capacity: usize) -> Self {
         Self::with_capacity(capacity)
@@ -641,11 +669,13 @@ impl StringLikeArrayBuilder for StringViewBuilder {
 /// assert_eq!(expected, actual);
 /// ```
 ///
+#[cfg(feature = "std")]
 pub type BinaryViewBuilder = GenericByteViewBuilder<BinaryViewType>;
 
+#[cfg(feature = "std")]
 impl BinaryLikeArrayBuilder for BinaryViewBuilder {
     fn type_name() -> &'static str {
-        std::any::type_name::<BinaryViewBuilder>()
+        core::any::type_name::<BinaryViewBuilder>()
     }
     fn with_capacity(capacity: usize) -> Self {
         Self::with_capacity(capacity)

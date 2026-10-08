@@ -40,8 +40,17 @@
 //! [`parquet-cli`]: https://github.com/apache/parquet-java/tree/master/parquet-cli
 //! [`parquet-viewer`]: https://github.com/xiangpenghao/parquet-viewer
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+use crate::io::Read;
 use std::fs::File;
-use std::io::Read;
 
 use clap::Parser;
 use parquet::file::metadata::ParquetMetaDataReader;
@@ -210,7 +219,7 @@ fn read_page_header<C: ChunkReader>(reader: &C, offset: u64) -> Result<(usize, P
     struct TrackedRead<R>(R, usize);
 
     impl<R: Read> Read for TrackedRead<R> {
-        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
             let v = self.0.read(buf)?;
             self.1 += v;
             Ok(v)
@@ -267,7 +276,7 @@ impl Args {
         let file = File::open(&self.file)?;
         let layout = do_layout(&file)?;
 
-        let out = std::io::stdout();
+        let out = crate::io::stdout();
         let writer = out.lock();
 
         serde_json::to_writer_pretty(writer, &layout).unwrap();

@@ -15,6 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 #[cfg(feature = "encryption")]
 use crate::encryption::decrypt::FileDecryptionProperties;
 use crate::errors::{ParquetError, Result};
@@ -26,9 +35,11 @@ use crate::file::metadata::{
 };
 use crate::file::reader::ChunkReader;
 use crate::schema::types::SchemaDescriptor;
+use alloc::sync::Arc;
 use bytes::Bytes;
-use std::sync::Arc;
-use std::{io::Read, ops::Range};
+use core::ops::Range;
+
+use crate::io::Read;
 
 use crate::DecodeResult;
 #[cfg(all(feature = "async", feature = "arrow"))]
@@ -190,7 +201,7 @@ impl ParquetMetaDataReader {
     #[cfg(feature = "encryption")]
     pub fn with_decryption_properties(
         mut self,
-        properties: Option<std::sync::Arc<FileDecryptionProperties>>,
+        properties: Option<alloc::sync::Arc<FileDecryptionProperties>>,
     ) -> Self {
         self.file_decryption_properties = properties;
         self
@@ -530,13 +541,7 @@ impl ParquetMetaDataReader {
                 let remainder_start = *remainder_start as u64;
                 let offset = usize::try_from(range.start - remainder_start)?;
                 let end = usize::try_from(range.end - remainder_start)?;
-                if end > remainder.len() {
-                    return Err(general_err!(
-                        "Corrupted parquet file: index data range ({:?}) exceeds remainder length ({})",
-                        range,
-                        remainder.len()
-                    ));
-                }
+                assert!(end <= remainder.len());
                 remainder.slice(offset..end)
             }
             // Note: this will potentially fetch data already in remainder, this keeps things simple
@@ -544,13 +549,7 @@ impl ParquetMetaDataReader {
         };
 
         // Sanity check
-        if bytes.len() as u64 != range.end - range.start {
-            return Err(general_err!(
-                "Corrupted parquet file: index data length mismatch, expected {}, got {}",
-                range.end - range.start,
-                bytes.len()
-            ));
-        }
+        assert_eq!(bytes.len() as u64, range.end - range.start);
         push_decoder.push_range(range.clone(), bytes)?;
         let metadata = parse_index_data(&mut push_decoder)?;
         self.metadata = Some(metadata);
@@ -801,7 +800,7 @@ impl ParquetMetaDataReader {
         push_decoder.with_file_decryption_properties(
             self.file_decryption_properties
                 .as_ref()
-                .map(std::sync::Arc::clone),
+                .map(alloc::sync::Arc::clone),
         )
     }
     #[cfg(not(feature = "encryption"))]
@@ -884,7 +883,7 @@ mod tests {
     use super::*;
     use crate::file::reader::Length;
     use crate::util::test_common::file_util::get_test_file;
-    use std::ops::Range;
+    use core::ops::Range;
 
     #[test]
     fn test_parse_metadata_size_smaller_than_footer() {
@@ -1034,18 +1033,18 @@ mod tests {
 mod async_tests {
     use super::*;
 
+    use crate::io::{Read, Seek, SeekFrom};
+    use alloc::sync::Arc;
     use arrow::{array::Int32Array, datatypes::DataType};
     use arrow_array::RecordBatch;
     use arrow_schema::{Field, Schema};
     use bytes::Bytes;
+    use core::future::Future;
+    use core::ops::Range;
+    use core::sync::atomic::{AtomicUsize, Ordering};
     use futures::FutureExt;
     use futures::future::BoxFuture;
     use std::fs::File;
-    use std::future::Future;
-    use std::io::{Read, Seek, SeekFrom};
-    use std::ops::Range;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::NamedTempFile;
 
     use crate::arrow::ArrowWriter;

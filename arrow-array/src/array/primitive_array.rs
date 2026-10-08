@@ -25,14 +25,16 @@ use crate::timezone::Tz;
 use crate::trusted_len::trusted_len_unzip;
 use crate::types::*;
 use crate::{Array, ArrayAccessor, ArrayRef, Scalar};
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use arrow_buffer::{ArrowNativeType, Buffer, NullBuffer, NullBufferBuilder, ScalarBuffer, i256};
 use arrow_data::bit_iterator::try_for_each_valid_idx;
 use arrow_data::{ArrayData, ArrayDataBuilder};
 use arrow_schema::{ArrowError, DataType};
 use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, NaiveTime};
+use core::any::Any;
 use half::f16;
-use std::any::Any;
-use std::sync::Arc;
 
 /// A [`PrimitiveArray`] of `i8`
 ///
@@ -782,7 +784,7 @@ impl<T: ArrowPrimitiveType> PrimitiveArray<T> {
     /// Creates a PrimitiveArray based on an iterator of values without nulls
     pub fn from_iter_values<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
         let val_buf: Buffer = iter.into_iter().collect();
-        let len = val_buf.len() / std::mem::size_of::<T::Native>();
+        let len = val_buf.len() / core::mem::size_of::<T::Native>();
         Self {
             data_type: T::DATA_TYPE,
             values: ScalarBuffer::new(val_buf, 0, len),
@@ -796,7 +798,7 @@ impl<T: ArrowPrimitiveType> PrimitiveArray<T> {
         nulls: Option<NullBuffer>,
     ) -> Self {
         let val_buf: Buffer = iter.into_iter().collect();
-        let len = val_buf.len() / std::mem::size_of::<T::Native>();
+        let len = val_buf.len() / core::mem::size_of::<T::Native>();
         Self {
             data_type: T::DATA_TYPE,
             values: ScalarBuffer::new(val_buf, 0, len),
@@ -1123,7 +1125,7 @@ impl<T: ArrowPrimitiveType> PrimitiveArray<T> {
         let data = self.into_data();
         let null_bit_buffer = data.nulls().map(|b| b.inner().sliced());
 
-        let element_len = std::mem::size_of::<T::Native>();
+        let element_len = core::mem::size_of::<T::Native>();
         let buffer =
             data.buffers()[0].slice_with_length(data.offset() * element_len, len * element_len);
 
@@ -1244,7 +1246,7 @@ unsafe impl<T: ArrowPrimitiveType> Array for PrimitiveArray<T> {
     }
 
     fn get_array_memory_size(&self) -> usize {
-        std::mem::size_of::<Self>() + self.get_buffer_memory_size()
+        core::mem::size_of::<Self>() + self.get_buffer_memory_size()
     }
 
     #[cfg(feature = "pool")]
@@ -1321,8 +1323,8 @@ where
     }
 }
 
-impl<T: ArrowPrimitiveType> std::fmt::Debug for PrimitiveArray<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<T: ArrowPrimitiveType> core::fmt::Debug for PrimitiveArray<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let data_type = self.data_type();
 
         write!(f, "PrimitiveArray<{data_type}>\n[\n")?;
@@ -1378,7 +1380,7 @@ impl<T: ArrowPrimitiveType> std::fmt::Debug for PrimitiveArray<T> {
                     },
                 }
             }
-            _ => std::fmt::Debug::fmt(&array.value(index), f),
+            _ => core::fmt::Debug::fmt(&array.value(index), f),
         })?;
         write!(f, "]")
     }
@@ -1487,7 +1489,7 @@ impl<T: ArrowPrimitiveType> PrimitiveArray<T> {
     #[inline]
     pub unsafe fn from_trusted_len_iter<I, P>(iter: I) -> Self
     where
-        P: std::borrow::Borrow<Option<<T as ArrowPrimitiveType>::Native>>,
+        P: core::borrow::Borrow<Option<<T as ArrowPrimitiveType>::Native>>,
         I: IntoIterator<Item = P>,
     {
         let iterator = iter.into_iter();

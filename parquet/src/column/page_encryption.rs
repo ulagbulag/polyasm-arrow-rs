@@ -15,6 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::basic::PageType;
 use crate::column::page::CompressedPage;
 use crate::encryption::ciphers::BlockEncryptor;
@@ -23,9 +32,10 @@ use crate::encryption::modules::{ModuleType, create_module_aad};
 use crate::errors::ParquetError;
 use crate::errors::Result;
 use crate::file::metadata::thrift::PageHeader;
+#[cfg(feature = "std")]
+use crate::io::Write;
+use alloc::sync::Arc;
 use bytes::Bytes;
-use std::io::Write;
-use std::sync::Arc;
 
 #[derive(Debug)]
 /// Encrypts page headers and page data for columns

@@ -17,14 +17,25 @@
 
 //! Column chunk encryption metadata
 
-use std::io::Write;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+#[cfg(feature = "std")]
+use crate::io::Write;
 
 use crate::errors::{ParquetError, Result};
 use crate::file::metadata::HeapSize;
 use crate::parquet_thrift::{
-    ElementType, FieldType, ReadThrift, ThriftCompactInputProtocol, ThriftCompactOutputProtocol,
-    WriteThrift, WriteThriftField, read_thrift_vec,
+    ElementType, FieldType, ReadThrift, ThriftCompactInputProtocol, read_thrift_vec,
 };
+#[cfg(feature = "std")]
+use crate::parquet_thrift::{ThriftCompactOutputProtocol, WriteThrift, WriteThriftField};
 use crate::{thrift_struct, thrift_union};
 
 // define this and ColumnCryptoMetadata here so they're only defined when

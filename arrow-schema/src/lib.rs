@@ -22,13 +22,29 @@
     html_favicon_url = "https://arrow.apache.org/img/arrow-logo_chevrons_black-txt_transparent-bg.svg"
 )]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
+
+extern crate alloc;
+
+/// Map type backing the key-value metadata of [`Field`] and [`Schema`].
+///
+/// Under the default `std` feature this is [`std::collections::HashMap`], the
+/// upstream type. Without `std` there is no `HashMap` in `alloc`, so it becomes
+/// [`alloc::collections::BTreeMap`] instead; the only observable difference is
+/// that iteration is ordered by key.
+#[cfg(feature = "std")]
+pub use std::collections::HashMap as MetadataMap;
+
+#[cfg(not(feature = "std"))]
+pub use alloc::collections::BTreeMap as MetadataMap;
 
 mod datatype;
 
+use core::fmt::Display;
 pub use datatype::*;
-use std::fmt::Display;
 mod datatype_display;
+#[cfg(feature = "std")]
 mod datatype_parse;
 mod error;
 pub use error::*;
@@ -38,10 +54,10 @@ pub use field::*;
 mod fields;
 pub use fields::*;
 mod schema;
+use core::ops;
 pub use schema::*;
-use std::ops;
 
-#[cfg(feature = "ffi")]
+#[cfg(all(feature = "ffi", feature = "std"))]
 pub mod ffi;
 
 /// Options that define the sort order of a given column
@@ -90,7 +106,7 @@ pub struct SortOptions {
 }
 
 impl Display for SortOptions {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         if self.descending {
             write!(f, "DESC")?;
         } else {

@@ -17,16 +17,40 @@
 
 //! [`CachedArrayReader`] wrapper around [`ArrayReader`]
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+// Re-slicing the cached batches is `arrow-select` work, which this crate only
+// has with `std`; `CacheRole` names a cache position and needs none of it, so it
+// stays available either way.
+#[cfg(feature = "std")]
 use crate::arrow::array_reader::row_group_cache::BatchID;
+#[cfg(feature = "std")]
 use crate::arrow::array_reader::{ArrayReader, row_group_cache::RowGroupCache};
+#[cfg(feature = "std")]
 use crate::arrow::arrow_reader::metrics::ArrowReaderMetrics;
+#[cfg(feature = "std")]
+use crate::collections::HashMap;
+#[cfg(feature = "std")]
 use crate::errors::Result;
+#[cfg(feature = "std")]
+use crate::sync::RwLock;
+#[cfg(feature = "std")]
+use alloc::sync::Arc;
+#[cfg(feature = "std")]
 use arrow_array::{ArrayRef, BooleanArray, new_empty_array};
+#[cfg(feature = "std")]
 use arrow_buffer::BooleanBufferBuilder;
+#[cfg(feature = "std")]
 use arrow_schema::DataType as ArrowType;
-use std::any::Any;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+#[cfg(feature = "std")]
+use core::any::Any;
 
 /// Role of the cached array reader
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +89,7 @@ pub enum CacheRole {
 ///    Filter  Peak  Consume
 ///    Phase (Built) (Decrease)
 /// ```
+#[cfg(feature = "std")]
 pub struct CachedArrayReader {
     /// The underlying array reader
     inner: Box<dyn ArrayReader>,
@@ -89,6 +114,7 @@ pub struct CachedArrayReader {
     metrics: ArrowReaderMetrics,
 }
 
+#[cfg(feature = "std")]
 impl CachedArrayReader {
     /// Creates a new cached array reader with the specified role
     pub fn new(
@@ -185,6 +211,7 @@ impl CachedArrayReader {
     }
 }
 
+#[cfg(feature = "std")]
 impl ArrayReader for CachedArrayReader {
     fn as_any(&self) -> &dyn Any {
         self
@@ -222,7 +249,7 @@ impl ArrayReader for CachedArrayReader {
                     if array_len + batch_id.val * self.batch_size > self.outer_position {
                         // the cache batch has some records that we can select
                         let v = array_len + batch_id.val * self.batch_size - self.outer_position;
-                        let select_cnt = std::cmp::min(num_records - read, v);
+                        let select_cnt = core::cmp::min(num_records - read, v);
                         read += select_cnt;
                         self.metrics.increment_cache_reads(select_cnt);
                         self.outer_position += select_cnt;
@@ -239,7 +266,7 @@ impl ArrayReader for CachedArrayReader {
                         break;
                     }
                     self.metrics.increment_inner_reads(read_from_inner);
-                    let select_from_this_batch = std::cmp::min(
+                    let select_from_this_batch = core::cmp::min(
                         num_records - read,
                         self.inner_position - self.outer_position,
                     );
@@ -259,7 +286,7 @@ impl ArrayReader for CachedArrayReader {
     fn skip_records(&mut self, num_records: usize) -> Result<usize> {
         let mut skipped = 0;
         while skipped < num_records {
-            let size = std::cmp::min(num_records - skipped, self.batch_size);
+            let size = core::cmp::min(num_records - skipped, self.batch_size);
             skipped += size;
             self.selections.append_n(size, false);
             self.outer_position += size;
@@ -386,7 +413,7 @@ mod tests {
 
         fn read_records(&mut self, batch_size: usize) -> Result<usize> {
             let remaining = self.data.len() - self.position;
-            let to_read = std::cmp::min(batch_size, remaining);
+            let to_read = core::cmp::min(batch_size, remaining);
             self.records_to_consume += to_read;
             Ok(to_read)
         }
@@ -402,7 +429,7 @@ mod tests {
 
         fn skip_records(&mut self, num_records: usize) -> Result<usize> {
             let remaining = self.data.len() - self.position;
-            let to_skip = std::cmp::min(num_records, remaining);
+            let to_skip = core::cmp::min(num_records, remaining);
             self.position += to_skip;
             Ok(to_skip)
         }

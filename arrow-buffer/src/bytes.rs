@@ -19,9 +19,9 @@
 //! how to de-allocate itself, [`Bytes`].
 //! Note that this is a low-level functionality of this crate.
 
+use core::fmt::{Debug, Formatter};
+use core::ptr::NonNull;
 use core::slice;
-use std::ptr::NonNull;
-use std::{fmt::Debug, fmt::Formatter};
 
 use crate::alloc::Deallocation;
 use crate::buffer::dangling_ptr;
@@ -145,14 +145,15 @@ impl Bytes {
                 return Ok(()); // Nothing to do
             }
 
-            if let Ok(new_layout) = std::alloc::Layout::from_size_align(new_len, old_layout.align())
+            if let Ok(new_layout) =
+                core::alloc::Layout::from_size_align(new_len, old_layout.align())
             {
                 let old_ptr = self.ptr.as_ptr();
 
                 let new_ptr = match new_layout.size() {
                     0 => {
                         // SAFETY: Verified that old_layout.size != new_len (0)
-                        unsafe { std::alloc::dealloc(self.ptr.as_ptr(), old_layout) };
+                        unsafe { alloc_crate::alloc::dealloc(self.ptr.as_ptr(), old_layout) };
                         Some(dangling_ptr())
                     }
                     // SAFETY: the call to `realloc` is safe if all the following hold (from https://doc.rust-lang.org/stable/std/alloc/trait.GlobalAlloc.html#method.realloc):
@@ -160,7 +161,9 @@ impl Bytes {
                     // * `old_layout` must be the same layout that was used to allocate that block of memory (same)
                     // * `new_len` must be greater than zero
                     // * `new_len`, when rounded up to the nearest multiple of `layout.align()`, must not overflow `isize` (guaranteed by the success of `Layout::from_size_align`)
-                    _ => NonNull::new(unsafe { std::alloc::realloc(old_ptr, old_layout, new_len) }),
+                    _ => NonNull::new(unsafe {
+                        alloc_crate::alloc::realloc(old_ptr, old_layout, new_len)
+                    }),
                 };
 
                 if let Some(ptr) = new_ptr {
@@ -199,7 +202,7 @@ impl Drop for Bytes {
         match &self.deallocation {
             Deallocation::Standard(layout) => match layout.size() {
                 0 => {} // Nothing to do
-                _ => unsafe { std::alloc::dealloc(self.ptr.as_ptr(), *layout) },
+                _ => unsafe { alloc_crate::alloc::dealloc(self.ptr.as_ptr(), *layout) },
             },
             // The automatic drop implementation will free the memory once the reference count reaches zero
             Deallocation::Custom(_allocation, _size) => (),
@@ -207,7 +210,7 @@ impl Drop for Bytes {
     }
 }
 
-impl std::ops::Deref for Bytes {
+impl core::ops::Deref for Bytes {
     type Target = [u8];
 
     fn deref(&self) -> &[u8] {
@@ -222,7 +225,7 @@ impl PartialEq for Bytes {
 }
 
 impl Debug for Bytes {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
         write!(f, "Bytes {{ ptr: {:?}, len: {}, data: ", self.ptr, self.len,)?;
 
         f.debug_list().entries(self.iter()).finish()?;
@@ -237,7 +240,7 @@ impl From<bytes::Bytes> for Bytes {
         Self {
             len,
             ptr: NonNull::new(value.as_ptr() as _).unwrap(),
-            deallocation: Deallocation::Custom(std::sync::Arc::new(value), len),
+            deallocation: Deallocation::Custom(alloc_crate::sync::Arc::new(value), len),
             #[cfg(feature = "pool")]
             reservation: Mutex::new(None),
         }
@@ -274,8 +277,8 @@ mod tests {
             // Create a standard allocation
             let buffer = unsafe {
                 let layout =
-                    std::alloc::Layout::from_size_align(1024, crate::alloc::ALIGNMENT).unwrap();
-                let ptr = std::alloc::alloc(layout);
+                    core::alloc::Layout::from_size_align(1024, crate::alloc::ALIGNMENT).unwrap();
+                let ptr = alloc_crate::alloc::alloc(layout);
                 assert!(!ptr.is_null());
 
                 Bytes::new(
@@ -308,8 +311,9 @@ mod tests {
                 // Create a buffer with pool
                 let _buffer = unsafe {
                     let layout =
-                        std::alloc::Layout::from_size_align(1024, crate::alloc::ALIGNMENT).unwrap();
-                    let ptr = std::alloc::alloc(layout);
+                        core::alloc::Layout::from_size_align(1024, crate::alloc::ALIGNMENT)
+                            .unwrap();
+                    let ptr = alloc_crate::alloc::alloc(layout);
                     assert!(!ptr.is_null());
 
                     let bytes = Bytes::new(

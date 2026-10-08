@@ -243,7 +243,11 @@ mod fixed_size_binary_builder;
 pub use fixed_size_binary_builder::*;
 mod fixed_size_list_builder;
 pub use fixed_size_list_builder::*;
+// Interning dictionary builders depend on `hashbrown`/`ahash`, which come with
+// `std`; the read path runs without them.
+#[cfg(feature = "std")]
 mod fixed_size_binary_dictionary_builder;
+#[cfg(feature = "std")]
 pub use fixed_size_binary_dictionary_builder::*;
 mod generic_bytes_builder;
 pub use generic_bytes_builder::*;
@@ -255,13 +259,17 @@ mod null_builder;
 pub use null_builder::*;
 mod primitive_builder;
 pub use primitive_builder::*;
+#[cfg(feature = "std")]
 mod primitive_dictionary_builder;
+#[cfg(feature = "std")]
 pub use primitive_dictionary_builder::*;
 mod primitive_run_builder;
 pub use primitive_run_builder::*;
 mod struct_builder;
 pub use struct_builder::*;
+#[cfg(feature = "std")]
 mod generic_bytes_dictionary_builder;
+#[cfg(feature = "std")]
 pub use generic_bytes_dictionary_builder::*;
 mod generic_byte_run_builder;
 pub use generic_byte_run_builder::*;
@@ -274,9 +282,11 @@ mod union_builder;
 pub use union_builder::*;
 
 use crate::ArrayRef;
+#[cfg(feature = "std")]
 use crate::types::{Int8Type, Int16Type, Int32Type, Int64Type};
+use alloc::boxed::Box;
 use arrow_schema::{DataType, IntervalUnit, TimeUnit};
-use std::any::Any;
+use core::any::Any;
 
 /// Trait for dealing with different array builders at runtime
 ///
@@ -341,18 +351,6 @@ pub trait ArrayBuilder: Any + Send + Sync {
     /// Builds the array without resetting the underlying builder.
     fn finish_cloned(&self) -> ArrayRef;
 
-    /// Builds the array without resetting the values builder.
-    ///
-    /// This is relevant for dictionary builders but also for composite builders.
-    /// Those are not affected directly, but will call the corresponding method
-    /// on their constituent builders.
-    ///
-    /// The default implementation just calls [`finish`][Self::finish] which is sufficient
-    /// for all but the above mentioned builders.
-    fn finish_preserve_values(&mut self) -> ArrayRef {
-        self.finish()
-    }
-
     /// Returns the builder as a non-mutable `Any` reference.
     ///
     /// This is most useful when one wants to call non-mutable APIs on a specific builder
@@ -386,10 +384,6 @@ impl ArrayBuilder for Box<dyn ArrayBuilder> {
 
     fn finish_cloned(&self) -> ArrayRef {
         (**self).finish_cloned()
-    }
-
-    fn finish_preserve_values(&mut self) -> ArrayRef {
-        (**self).finish_preserve_values()
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -463,6 +457,7 @@ pub fn make_builder(datatype: &DataType, capacity: usize) -> Box<dyn ArrayBuilde
         DataType::Float64 => Box::new(Float64Builder::with_capacity(capacity)),
         DataType::Binary => Box::new(BinaryBuilder::with_capacity(capacity, 1024)),
         DataType::LargeBinary => Box::new(LargeBinaryBuilder::with_capacity(capacity, 1024)),
+        #[cfg(feature = "std")]
         DataType::BinaryView => Box::new(BinaryViewBuilder::with_capacity(capacity)),
         DataType::FixedSizeBinary(len) => {
             Box::new(FixedSizeBinaryBuilder::with_capacity(capacity, *len))
@@ -481,6 +476,7 @@ pub fn make_builder(datatype: &DataType, capacity: usize) -> Box<dyn ArrayBuilde
         ),
         DataType::Utf8 => Box::new(StringBuilder::with_capacity(capacity, 1024)),
         DataType::LargeUtf8 => Box::new(LargeStringBuilder::with_capacity(capacity, 1024)),
+        #[cfg(feature = "std")]
         DataType::Utf8View => Box::new(StringViewBuilder::with_capacity(capacity)),
         DataType::Date32 => Box::new(Date32Builder::with_capacity(capacity)),
         DataType::Date64 => Box::new(Date64Builder::with_capacity(capacity)),
@@ -586,6 +582,7 @@ pub fn make_builder(datatype: &DataType, capacity: usize) -> Box<dyn ArrayBuilde
             t => panic!("The field of Map data type {t} should have a child Struct field"),
         },
         DataType::Struct(fields) => Box::new(StructBuilder::from_fields(fields.clone(), capacity)),
+        #[cfg(feature = "std")]
         t @ DataType::Dictionary(key_type, value_type) => {
             macro_rules! dict_builder {
                 ($key_type:ty) => {
@@ -627,47 +624,5 @@ pub fn make_builder(datatype: &DataType, capacity: usize) -> Box<dyn ArrayBuilde
             }
         }
         t => unimplemented!("Data type {t} is not currently supported"),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[derive(Default)]
-    pub struct PreserveValuesMock {
-        pub called: usize,
-        pub inner: Int32Builder,
-    }
-
-    impl ArrayBuilder for PreserveValuesMock {
-        fn as_any(&self) -> &dyn Any {
-            self
-        }
-
-        fn as_any_mut(&mut self) -> &mut dyn Any {
-            self
-        }
-
-        fn into_box_any(self: Box<Self>) -> Box<dyn Any> {
-            self
-        }
-
-        fn len(&self) -> usize {
-            self.inner.len()
-        }
-
-        fn finish(&mut self) -> ArrayRef {
-            panic!("finish should never be called on PreserveValuesMock")
-        }
-
-        fn finish_cloned(&self) -> ArrayRef {
-            panic!("finish_cloned should never be called on PreserveValuesMock")
-        }
-
-        fn finish_preserve_values(&mut self) -> ArrayRef {
-            self.called += 1;
-            self.inner.finish_preserve_values()
-        }
     }
 }

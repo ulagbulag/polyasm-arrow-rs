@@ -17,11 +17,21 @@
 
 //! [`FilterInfo`] state machine for evaluating row filters
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::arrow::ProjectionMask;
 use crate::arrow::array_reader::{CacheOptionsBuilder, RowGroupCache};
 use crate::arrow::arrow_reader::{ArrowPredicate, RowFilter};
-use std::num::NonZeroUsize;
-use std::sync::{Arc, RwLock};
+use crate::sync::RwLock;
+use alloc::sync::Arc;
+use core::num::NonZeroUsize;
 
 /// State machine for evaluating a sequence of predicates.
 ///
@@ -124,13 +134,6 @@ impl FilterInfo {
             // advance ensures next_predicate is always in bounds
             .unwrap()
             .as_ref()
-    }
-
-    /// Returns `true` if the current predicate is the last one in the chain
-    /// (i.e. the next call to [`Self::advance`] will return
-    /// [`AdvanceResult::Done`]).
-    pub(super) fn is_last(&self) -> bool {
-        self.next_predicate.get() == self.filter.predicates.len()
     }
 
     /// Return a reference to the cache projection

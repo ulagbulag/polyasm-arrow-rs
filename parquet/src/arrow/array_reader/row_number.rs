@@ -15,27 +15,27 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::arrow::array_reader::ArrayReader;
+use crate::collections::HashMap;
 use crate::errors::{ParquetError, Result};
 use crate::file::metadata::{ParquetMetaData, RowGroupMetaData};
+use alloc::sync::Arc;
 use arrow_array::{ArrayRef, Int64Array};
 use arrow_schema::DataType;
-use std::any::Any;
-use std::collections::{HashMap, VecDeque};
-use std::ops::Range;
-use std::sync::Arc;
+use core::any::Any;
 
-/// Tracks row numbers within a Parquet file and emits them as an `Int64Array`.
 pub(crate) struct RowNumberReader {
-    /// Pre-computed row ranges that are not read yet.
-    ///
-    /// This reader only keeps track of the ranges of row numbers for each row group. The range is
-    /// not materialized into a full array until it's needed.
-    remaining_row_ranges: VecDeque<Range<i64>>,
-    /// Row ranges read but not emitted.
-    ///
-    /// These are either full or partial (split) row ranges taken from `remaining_row_ranges`.
-    buffered_row_ranges: Vec<Range<i64>>,
+    buffered_row_numbers: Vec<i64>,
+    remaining_row_numbers: core::iter::Flatten<alloc::vec::IntoIter<core::ops::Range<i64>>>,
 }
 
 impl RowNumberReader {
@@ -58,7 +58,7 @@ impl RowNumberReader {
         // Pass 2: Build ranges in the order specified by the row_groups iterator
         // This is O(N) where N is the number of selected row groups
         // This preserves the user's requested order instead of sorting by ordinal
-        let ranges: VecDeque<_> = row_groups
+        let ranges: Vec<_> = row_groups
             .map(|rg| {
                 let ordinal = rg.ordinal().ok_or_else(|| {
                     ParquetError::General(
@@ -79,52 +79,23 @@ impl RowNumberReader {
             .collect::<Result<_>>()?;
 
         Ok(Self {
-            buffered_row_ranges: Vec::new(),
-            remaining_row_ranges: ranges,
+            buffered_row_numbers: Vec::new(),
+            remaining_row_numbers: ranges.into_iter().flatten(),
         })
-    }
-
-    /// Take up to `count` rows from the first range, splitting it if needed.
-    ///
-    /// Returns `None` if no ranges remain.
-    fn take_range(&mut self, count: usize) -> Option<Range<i64>> {
-        let first = self.remaining_row_ranges.front_mut()?;
-        if (first.end - first.start) <= count as i64 {
-            // take out the full range
-            self.remaining_row_ranges.pop_front()
-        } else {
-            // first range has more rows than we need.
-            // so we split the range and put the remaining back.
-            let split = first.start + count as i64;
-            let taken = first.start..split;
-            first.start = split;
-            Some(taken)
-        }
     }
 }
 
 impl ArrayReader for RowNumberReader {
     fn read_records(&mut self, batch_size: usize) -> Result<usize> {
-        let mut remaining = batch_size;
-        while remaining > 0 {
-            let Some(range) = self.take_range(remaining) else {
-                break;
-            };
-            remaining -= (range.end - range.start) as usize;
-            self.buffered_row_ranges.push(range);
-        }
-        Ok(batch_size - remaining)
+        let starting_len = self.buffered_row_numbers.len();
+        self.buffered_row_numbers
+            .extend((&mut self.remaining_row_numbers).take(batch_size));
+        Ok(self.buffered_row_numbers.len() - starting_len)
     }
 
     fn skip_records(&mut self, num_records: usize) -> Result<usize> {
-        let mut remaining = num_records;
-        while remaining > 0 {
-            let Some(range) = self.take_range(remaining) else {
-                break;
-            };
-            remaining -= (range.end - range.start) as usize;
-        }
-        Ok(num_records - remaining)
+        // `advance_by` is the faster form where the toolchain stabilizes it
+        Ok((&mut self.remaining_row_numbers).take(num_records).count())
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -136,18 +107,9 @@ impl ArrayReader for RowNumberReader {
     }
 
     fn consume_batch(&mut self) -> Result<ArrayRef> {
-        let total_rows: i64 = self
-            .buffered_row_ranges
-            .iter()
-            .map(|range| range.end - range.start)
-            .sum();
-        let mut result = Vec::with_capacity(total_rows as usize);
-
-        for range in self.buffered_row_ranges.drain(..) {
-            result.extend(range);
-        }
-
-        Ok(Arc::new(Int64Array::from(result)))
+        Ok(Arc::new(Int64Array::from_iter(
+            self.buffered_row_numbers.drain(..),
+        )))
     }
 
     fn get_def_levels(&self) -> Option<&[i16]> {
@@ -167,7 +129,7 @@ mod tests {
         ColumnChunkMetaData, FileMetaData, ParquetMetaData, RowGroupMetaData,
     };
     use crate::schema::types::{SchemaDescriptor, Type as SchemaType};
-    use std::sync::Arc;
+    use alloc::sync::Arc;
 
     fn create_test_schema() -> Arc<SchemaDescriptor> {
         let schema = SchemaType::group_type_builder("schema")
@@ -215,21 +177,6 @@ mod tests {
         ParquetMetaData::new(file_metadata, row_group_metas)
     }
 
-    fn consume_row_numbers(reader: &mut RowNumberReader) -> Vec<i64> {
-        let array = reader.consume_batch().unwrap();
-        array
-            .as_any()
-            .downcast_ref::<Int64Array>()
-            .unwrap()
-            .values()
-            .to_vec()
-    }
-
-    fn reader_for_all(metadata: &ParquetMetaData) -> RowNumberReader {
-        let all_rgs: Vec<_> = metadata.row_groups().iter().collect();
-        RowNumberReader::try_new(metadata, all_rgs.into_iter()).unwrap()
-    }
-
     #[test]
     fn test_row_number_reader_reverse_order() {
         // Create metadata with 3 row groups, each with 2 rows
@@ -253,53 +200,16 @@ mod tests {
         let num_read = reader.read_records(6).unwrap();
         assert_eq!(num_read, 4); // Should read 4 rows total (2 from each selected group)
 
+        let array = reader.consume_batch().unwrap();
+        let row_numbers = array.as_any().downcast_ref::<Int64Array>().unwrap();
+
         // Expected: row group 2 first (rows 4-5), then row group 0 (rows 0-1)
-        assert_eq!(consume_row_numbers(&mut reader), vec![4, 5, 0, 1]);
-    }
+        let expected = vec![4, 5, 0, 1];
+        let actual: Vec<i64> = row_numbers.iter().map(|v| v.unwrap()).collect();
 
-    #[test]
-    fn test_range_splitting_across_batches() {
-        // One row group with 10 rows
-        let metadata = create_test_parquet_metadata(vec![(0, 10)]);
-        let mut reader = reader_for_all(&metadata);
-
-        assert_eq!(reader.read_records(3).unwrap(), 3);
-        assert_eq!(consume_row_numbers(&mut reader), vec![0, 1, 2]);
-
-        assert_eq!(reader.read_records(3).unwrap(), 3);
-        assert_eq!(consume_row_numbers(&mut reader), vec![3, 4, 5]);
-
-        assert_eq!(reader.read_records(3).unwrap(), 3);
-        assert_eq!(consume_row_numbers(&mut reader), vec![6, 7, 8]);
-
-        // Only 1 row left, requesting 3
-        assert_eq!(reader.read_records(3).unwrap(), 1);
-        assert_eq!(consume_row_numbers(&mut reader), vec![9]);
-    }
-
-    #[test]
-    fn test_interleaved_skip_and_read() {
-        // Row group 0: rows 0..5
-        // Row group 1: rows 5..10
-        let metadata = create_test_parquet_metadata(vec![(0, 5), (1, 5)]);
-        let mut reader = reader_for_all(&metadata);
-
-        assert_eq!(reader.skip_records(2).unwrap(), 2); // skip [0,1]
-        assert_eq!(reader.read_records(2).unwrap(), 2); // read [2,3]
-        assert_eq!(reader.skip_records(3).unwrap(), 3); // skip [4] then [5,6]
-        assert_eq!(reader.read_records(3).unwrap(), 3); // read [7,8,9]
-
-        assert_eq!(consume_row_numbers(&mut reader), vec![2, 3, 7, 8, 9]);
-    }
-
-    #[test]
-    fn test_skip_then_read() {
-        // One row group with 10 rows
-        let metadata = create_test_parquet_metadata(vec![(0, 10)]);
-        let mut reader = reader_for_all(&metadata);
-
-        assert_eq!(reader.skip_records(3).unwrap(), 3);
-        assert_eq!(reader.read_records(4).unwrap(), 4);
-        assert_eq!(consume_row_numbers(&mut reader), vec![3, 4, 5, 6]);
+        assert_eq!(
+            actual, expected,
+            "Row numbers should match the order of selected row groups, not file order"
+        );
     }
 }

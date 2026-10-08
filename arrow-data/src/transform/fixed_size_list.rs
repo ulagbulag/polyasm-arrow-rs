@@ -16,6 +16,7 @@
 // under the License.
 
 use crate::ArrayData;
+use alloc::boxed::Box;
 use arrow_schema::DataType;
 
 use super::{_MutableArrayData, Extend};

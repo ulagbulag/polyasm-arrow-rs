@@ -17,9 +17,11 @@
 
 use crate::StructArray;
 use crate::builder::*;
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use arrow_buffer::NullBufferBuilder;
 use arrow_schema::{Fields, SchemaBuilder};
-use std::sync::Arc;
 
 /// Builder for [`StructArray`]
 ///
@@ -105,8 +107,8 @@ pub struct StructBuilder {
     null_buffer_builder: NullBufferBuilder,
 }
 
-impl std::fmt::Debug for StructBuilder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for StructBuilder {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("StructBuilder")
             .field("fields", &self.fields)
             .field("bitmap_builder", &self.null_buffer_builder)
@@ -133,10 +135,6 @@ impl ArrayBuilder for StructBuilder {
     /// Builds the array without resetting the builder.
     fn finish_cloned(&self) -> ArrayRef {
         Arc::new(self.finish_cloned())
-    }
-
-    fn finish_preserve_values(&mut self) -> ArrayRef {
-        Arc::new(self.finish_preserve_values())
     }
 
     /// Returns the builder as a non-mutable `Any` reference.
@@ -269,23 +267,6 @@ impl StructBuilder {
         StructArray::new(self.fields.clone(), arrays, nulls)
     }
 
-    fn finish_preserve_values(&mut self) -> StructArray {
-        self.validate_content();
-        if self.fields.is_empty() {
-            return StructArray::new_empty_fields(self.len(), self.null_buffer_builder.finish());
-        }
-
-        let arrays = self
-            .field_builders
-            .iter_mut()
-            .map(|f| f.finish_preserve_values())
-            .collect();
-
-        let nulls = self.null_buffer_builder.finish();
-
-        StructArray::new(self.fields.clone(), arrays, nulls)
-    }
-
     /// Constructs and validates contents in the builder to ensure that
     /// - fields and field_builders are of equal length
     /// - the number of items in individual field_builders are equal to self.len()
@@ -318,14 +299,14 @@ impl StructBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::any::type_name;
+    use core::any::type_name;
 
     use super::*;
     use arrow_buffer::Buffer;
     use arrow_data::ArrayData;
     use arrow_schema::Field;
 
-    use crate::{array::Array, builder::tests::PreserveValuesMock, types::ArrowDictionaryKeyType};
+    use crate::{array::Array, types::ArrowDictionaryKeyType};
 
     #[test]
     fn test_struct_array_builder() {
@@ -542,33 +523,6 @@ mod tests {
 
         assert_eq!(15, arr.len());
         assert_eq!(0, builder.len());
-    }
-
-    #[test]
-    fn test_struct_array_builder_finish_preserve_values() {
-        let fields = vec![Field::new("mock", DataType::Int32, false)];
-        let field_builders = vec![Box::new(PreserveValuesMock::default()) as Box<dyn ArrayBuilder>];
-
-        let mut builder = StructBuilder::new(fields, field_builders);
-        builder
-            .field_builder::<PreserveValuesMock>(0)
-            .unwrap()
-            .inner
-            .append_value(1);
-        builder.append(true);
-
-        assert_eq!(1, builder.len());
-
-        let arr = builder.finish_preserve_values();
-
-        assert_eq!(1, arr.len());
-        assert_eq!(
-            1,
-            builder
-                .field_builder::<PreserveValuesMock>(0)
-                .unwrap()
-                .called
-        );
     }
 
     #[test]

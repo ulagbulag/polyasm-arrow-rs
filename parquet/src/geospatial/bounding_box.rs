@@ -22,6 +22,15 @@
 //!
 //!
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::file::metadata::HeapSize;
 
 /// A geospatial instance has at least two coordinate dimensions: X and Y for 2D coordinates of each point.

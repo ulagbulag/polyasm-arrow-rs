@@ -15,9 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+use crate::collections::HashMap;
 use arrow_array::{Array, ArrayRef};
 use arrow_schema::DataType;
-use std::collections::HashMap;
 
 /// Starting row ID for this batch
 ///
@@ -29,13 +38,13 @@ use std::collections::HashMap;
 /// The `BatchID` for any particular row is `row_index / batch_size`. The
 /// integer division ensures that rows in the same batch share the same
 /// the BatchID which can be calculated quickly from the row index
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BatchID {
     pub val: usize,
 }
 
 /// Cache key that uniquely identifies a batch within a row group
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CacheKey {
     /// Column index in the row group
     pub column_idx: usize,
@@ -50,7 +59,7 @@ fn get_array_memory_size_for_cache(array: &ArrayRef) -> usize {
         DataType::Utf8View => {
             use arrow_array::cast::AsArray;
             let array = array.as_string_view();
-            array.len() * 16 + array.total_buffer_bytes_used() + std::mem::size_of_val(array)
+            array.len() * 16 + array.total_buffer_bytes_used() + core::mem::size_of_val(array)
         }
         _ => array.get_array_memory_size(),
     }
@@ -138,8 +147,8 @@ impl RowGroupCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::sync::Arc;
     use arrow_array::{ArrayRef, Int32Array};
-    use std::sync::Arc;
 
     #[test]
     fn test_cache_basic_operations() {

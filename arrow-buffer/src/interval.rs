@@ -16,7 +16,7 @@
 // under the License.
 
 use crate::arith::derive_arith;
-use std::ops::Neg;
+use core::ops::Neg;
 
 /// Value of an IntervalMonthDayNano array
 ///

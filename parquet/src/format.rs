@@ -9,14 +9,23 @@
 // Fix unexpected `cfg` condition name: `rustfmt` https://github.com/apache/arrow-rs/issues/5725
 //#![cfg_attr(rustfmt, rustfmt_skip)]
 
-use std::cell::RefCell;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+use alloc::rc::Rc;
+use core::cell::RefCell;
+use core::convert::{From, TryFrom};
+use core::default::Default;
+use core::error::Error;
+use core::fmt;
+use core::fmt::{Display, Formatter};
 use std::collections::{BTreeMap, BTreeSet};
-use std::convert::{From, TryFrom};
-use std::default::Default;
-use std::error::Error;
-use std::fmt;
-use std::fmt::{Display, Formatter};
-use std::rc::Rc;
 
 use thrift::OrderedFloat;
 use thrift::{ApplicationError, ApplicationErrorKind, ProtocolError, ProtocolErrorKind, TThriftClient};

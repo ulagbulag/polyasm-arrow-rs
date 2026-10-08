@@ -15,17 +15,26 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::arrow::array_reader::{ArrayReader, read_records, skip_records};
 use crate::arrow::record_reader::RecordReader;
 use crate::column::page::PageIterator;
 use crate::data_type::DataType;
 use crate::errors::Result;
 use crate::schema::types::ColumnDescPtr;
+use alloc::sync::Arc;
 use arrow_array::ArrayRef;
 use arrow_buffer::ArrowNativeType;
 use arrow_schema::DataType as ArrowType;
-use std::any::Any;
-use std::sync::Arc;
+use core::any::Any;
 
 /// A NullArrayReader reads Parquet columns stored as null int32s with an Arrow
 /// NullArray type.
@@ -47,14 +56,8 @@ where
     T::T: ArrowNativeType,
 {
     /// Construct null array reader.
-    ///
-    /// `batch_size` is used to pre-allocate internal buffers.
-    pub fn new(
-        pages: Box<dyn PageIterator>,
-        column_desc: ColumnDescPtr,
-        batch_size: usize,
-    ) -> Result<Self> {
-        let record_reader = RecordReader::<T>::new(column_desc, batch_size);
+    pub fn new(pages: Box<dyn PageIterator>, column_desc: ColumnDescPtr) -> Result<Self> {
+        let record_reader = RecordReader::<T>::new(column_desc);
 
         Ok(Self {
             data_type: ArrowType::Null,

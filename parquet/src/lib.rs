@@ -140,7 +140,207 @@
     html_favicon_url = "https://raw.githubusercontent.com/apache/parquet-format/25f05e73d8cd7f5c83532ce51cb4f4de8ba5f2a2/logo/parquet-logos_1.svg"
 )]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(not(feature = "std"), feature(alloc_io))]
 #![warn(missing_docs)]
+
+#[macro_use]
+extern crate alloc;
+
+/// Byte-stream I/O traits.
+///
+/// `std::io` under the default `std` feature; `alloc::io` — which carries the
+/// same `Read`/`Write`/`Seek`/`Cursor`/`Error` items — without it.
+#[cfg(feature = "std")]
+pub(crate) use std::io;
+
+#[cfg(not(feature = "std"))]
+pub(crate) use alloc::io;
+
+/// Keyed collections: `std`'s `HashMap` and `HashSet`, or the ordered `alloc`
+/// B-tree collections under `no_std`.
+///
+/// `core` and `alloc` carry the B-tree collections alone, so a `no_std` build
+/// takes those. They supply every operation this crate performs on them, and
+/// their iteration runs in key order.
+pub(crate) mod collections {
+    #[cfg(feature = "std")]
+    pub(crate) use std::collections::{HashMap, HashSet};
+
+    #[cfg(not(feature = "std"))]
+    pub(crate) use alloc::collections::{BTreeMap as HashMap, BTreeSet as HashSet};
+
+    /// A map with room for `capacity` entries where the backing type reserves.
+    pub(crate) fn map_with_capacity<K, V>(capacity: usize) -> HashMap<K, V> {
+        #[cfg(feature = "std")]
+        {
+            HashMap::with_capacity(capacity)
+        }
+        // A B-tree allocates per node, so there is nothing to reserve up front.
+        #[cfg(not(feature = "std"))]
+        {
+            let _ = capacity;
+            HashMap::new()
+        }
+    }
+
+    /// A set with room for `capacity` entries where the backing type reserves.
+    pub(crate) fn set_with_capacity<T>(capacity: usize) -> HashSet<T> {
+        #[cfg(feature = "std")]
+        {
+            HashSet::with_capacity(capacity)
+        }
+        // A B-tree allocates per node, so there is nothing to reserve up front.
+        #[cfg(not(feature = "std"))]
+        {
+            let _ = capacity;
+            HashSet::new()
+        }
+    }
+}
+
+/// Reader-writer locking, matching the `std::sync::RwLock` surface this crate
+/// uses.
+///
+/// `std::sync` under the default `std` feature. Without it the shared predicate
+/// cache stands behind the ticket-free spin lock below, since `core` and
+/// `alloc` carry no lock: it is built from the same atomics `alloc::sync`
+/// already requires, and `read`/`write` keep returning a `Result` so callers
+/// read identically on both builds. Acquisition always succeeds, so the error
+/// type is uninhabited.
+pub(crate) mod sync {
+    #[cfg(feature = "std")]
+    pub(crate) use std::sync::RwLock;
+
+    #[cfg(not(feature = "std"))]
+    pub(crate) use self::spin::RwLock;
+
+    #[cfg(not(feature = "std"))]
+    mod spin {
+        use core::cell::UnsafeCell;
+        use core::convert::Infallible;
+        use core::fmt::{self, Debug, Formatter};
+        use core::hint::spin_loop;
+        use core::ops::{Deref, DerefMut};
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        /// `state` counts readers; this reserved value marks the single writer.
+        const WRITER: usize = usize::MAX;
+
+        /// A spin lock with `std::sync::RwLock`'s shared/exclusive semantics.
+        pub(crate) struct RwLock<T: ?Sized> {
+            state: AtomicUsize,
+            value: UnsafeCell<T>,
+        }
+
+        // The lock serialises every access to `value`, so sharing it across
+        // threads needs exactly what `std::sync::RwLock` needs.
+        unsafe impl<T: ?Sized + Send> Send for RwLock<T> {}
+        unsafe impl<T: ?Sized + Send + Sync> Sync for RwLock<T> {}
+
+        impl<T> RwLock<T> {
+            pub(crate) fn new(value: T) -> Self {
+                Self {
+                    state: AtomicUsize::new(0),
+                    value: UnsafeCell::new(value),
+                }
+            }
+        }
+
+        impl<T: ?Sized> RwLock<T> {
+            pub(crate) fn read(&self) -> Result<RwLockReadGuard<'_, T>, Infallible> {
+                loop {
+                    let state = self.state.load(Ordering::Relaxed);
+                    if state != WRITER
+                        && self
+                            .state
+                            .compare_exchange_weak(
+                                state,
+                                state + 1,
+                                Ordering::Acquire,
+                                Ordering::Relaxed,
+                            )
+                            .is_ok()
+                    {
+                        return Ok(RwLockReadGuard { lock: self });
+                    }
+                    spin_loop();
+                }
+            }
+
+            pub(crate) fn write(&self) -> Result<RwLockWriteGuard<'_, T>, Infallible> {
+                while self
+                    .state
+                    .compare_exchange_weak(0, WRITER, Ordering::Acquire, Ordering::Relaxed)
+                    .is_err()
+                {
+                    spin_loop();
+                }
+                Ok(RwLockWriteGuard { lock: self })
+            }
+        }
+
+        impl<T: ?Sized + Debug> Debug for RwLock<T> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                let mut builder = f.debug_struct("RwLock");
+                if self.state.load(Ordering::Relaxed) == WRITER {
+                    builder.field("data", &"<locked>");
+                } else {
+                    let guard = self.read().unwrap_or_else(|error| match error {});
+                    builder.field("data", &&*guard);
+                }
+                builder.finish()
+            }
+        }
+
+        /// Shared access returned by [`RwLock::read`].
+        pub(crate) struct RwLockReadGuard<'a, T: ?Sized> {
+            lock: &'a RwLock<T>,
+        }
+
+        impl<T: ?Sized> Deref for RwLockReadGuard<'_, T> {
+            type Target = T;
+
+            fn deref(&self) -> &T {
+                // A read guard exists only while no writer holds the lock.
+                unsafe { &*self.lock.value.get() }
+            }
+        }
+
+        impl<T: ?Sized> Drop for RwLockReadGuard<'_, T> {
+            fn drop(&mut self) {
+                self.lock.state.fetch_sub(1, Ordering::Release);
+            }
+        }
+
+        /// Exclusive access returned by [`RwLock::write`].
+        pub(crate) struct RwLockWriteGuard<'a, T: ?Sized> {
+            lock: &'a RwLock<T>,
+        }
+
+        impl<T: ?Sized> Deref for RwLockWriteGuard<'_, T> {
+            type Target = T;
+
+            fn deref(&self) -> &T {
+                // A write guard is the only live borrow of `value`.
+                unsafe { &*self.lock.value.get() }
+            }
+        }
+
+        impl<T: ?Sized> DerefMut for RwLockWriteGuard<'_, T> {
+            fn deref_mut(&mut self) -> &mut T {
+                // A write guard is the only live borrow of `value`.
+                unsafe { &mut *self.lock.value.get() }
+            }
+        }
+
+        impl<T: ?Sized> Drop for RwLockWriteGuard<'_, T> {
+            fn drop(&mut self) {
+                self.lock.state.store(0, Ordering::Release);
+            }
+        }
+    }
+}
 /// Defines a an item with an experimental public API
 ///
 /// The module will not be documented, and will only be public if the
@@ -190,13 +390,15 @@ pub mod basic;
     since = "57.0.0",
     note = "The `format` module is no longer maintained, and will be removed in `59.0.0`"
 )]
+#[cfg(feature = "std")]
 pub mod format;
 
 #[macro_use]
 pub mod data_type;
 
-use std::fmt::Debug;
-use std::ops::Range;
+use alloc::vec::Vec;
+use core::fmt::Debug;
+use core::ops::Range;
 // Exported for external use, such as benchmarks
 #[cfg(feature = "experimental")]
 #[doc(hidden)]
@@ -211,17 +413,20 @@ pub mod arrow;
 pub mod column;
 experimental!(mod compression);
 experimental!(mod encodings);
+#[cfg(feature = "std")]
 pub mod bloom_filter;
 
 #[cfg(feature = "encryption")]
 experimental!(pub mod encryption);
 
 pub mod file;
+#[cfg(feature = "std")]
 pub mod record;
 pub mod schema;
 
 mod parquet_macros;
 mod parquet_thrift;
+#[cfg(feature = "std")]
 pub mod thrift;
 /// What data is needed to read the next item from a decoder.
 ///

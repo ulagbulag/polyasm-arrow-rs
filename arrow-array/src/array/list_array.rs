@@ -21,12 +21,12 @@ use crate::{
     Array, ArrayAccessor, ArrayRef, ArrowPrimitiveType, FixedSizeListArray,
     iterator::GenericListArrayIter, new_empty_array,
 };
+use alloc::sync::Arc;
 use arrow_buffer::{ArrowNativeType, NullBuffer, OffsetBuffer};
 use arrow_data::{ArrayData, ArrayDataBuilder};
 use arrow_schema::{ArrowError, DataType, FieldRef};
+use core::any::Any;
 use num_integer::Integer;
-use std::any::Any;
-use std::sync::Arc;
 
 /// A type that can be used within a variable-size array to encode offset information
 ///
@@ -38,7 +38,7 @@ use std::sync::Arc;
 /// [`StringArray`]: crate::array::StringArray
 /// [`LargeStringArray`]: crate::array::LargeStringArray
 pub trait OffsetSizeTrait:
-    ArrowNativeType + std::ops::AddAssign + Integer + num_traits::CheckedAdd
+    ArrowNativeType + core::ops::AddAssign + Integer + num_traits::CheckedAdd
 {
     /// True for 64 bit offset size and false for 32 bit offset size
     const IS_LARGE: bool;
@@ -613,7 +613,7 @@ unsafe impl<OffsetSize: OffsetSizeTrait> Array for GenericListArray<OffsetSize> 
     }
 
     fn get_array_memory_size(&self) -> usize {
-        let mut size = std::mem::size_of::<Self>() + self.values.get_array_memory_size();
+        let mut size = core::mem::size_of::<Self>() + self.values.get_array_memory_size();
         size += self.value_offsets.inner().inner().capacity();
         if let Some(n) = self.nulls.as_ref() {
             size += n.buffer().capacity();
@@ -636,7 +636,7 @@ impl<OffsetSize: OffsetSizeTrait> super::ListLikeArray for GenericListArray<Offs
         self.values()
     }
 
-    fn element_range(&self, index: usize) -> std::ops::Range<usize> {
+    fn element_range(&self, index: usize) -> core::ops::Range<usize> {
         let offsets = self.offsets();
         let start = offsets[index].as_usize();
         let end = offsets[index + 1].as_usize();
@@ -656,13 +656,13 @@ impl<OffsetSize: OffsetSizeTrait> ArrayAccessor for &GenericListArray<OffsetSize
     }
 }
 
-impl<OffsetSize: OffsetSizeTrait> std::fmt::Debug for GenericListArray<OffsetSize> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<OffsetSize: OffsetSizeTrait> core::fmt::Debug for GenericListArray<OffsetSize> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let prefix = OffsetSize::PREFIX;
 
         write!(f, "{prefix}ListArray\n[\n")?;
         print_long_array(self, f, |array, index, f| {
-            std::fmt::Debug::fmt(&array.value(index), f)
+            core::fmt::Debug::fmt(&array.value(index), f)
         })?;
         write!(f, "]")
     }

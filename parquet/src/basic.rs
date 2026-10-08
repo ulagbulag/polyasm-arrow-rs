@@ -20,16 +20,25 @@
 //! Refer to [`parquet.thrift`](https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift)
 //! file to see raw definitions.
 
-use std::io::Write;
-use std::str::FromStr;
-use std::{fmt, str};
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+#[cfg(feature = "std")]
+use crate::io::Write;
+use core::str::FromStr;
+use core::{fmt, str};
 
 pub use crate::compression::{BrotliLevel, GzipLevel, ZstdLevel};
 use crate::file::metadata::HeapSize;
-use crate::parquet_thrift::{
-    ElementType, FieldType, ReadThrift, ThriftCompactInputProtocol, ThriftCompactOutputProtocol,
-    WriteThrift, WriteThriftField,
-};
+use crate::parquet_thrift::{ElementType, FieldType, ReadThrift, ThriftCompactInputProtocol};
+#[cfg(feature = "std")]
+use crate::parquet_thrift::{ThriftCompactOutputProtocol, WriteThrift, WriteThriftField};
 use crate::{thrift_enum, thrift_struct, thrift_union_all_empty, write_thrift_field};
 
 use crate::errors::{ParquetError, Result};
@@ -430,6 +439,7 @@ impl<'a, R: ThriftCompactInputProtocol<'a>> ReadThrift<'a, R> for LogicalType {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThrift for LogicalType {
     const ELEMENT_TYPE: ElementType = ElementType::Struct;
 
@@ -854,6 +864,7 @@ impl<'a, R: ThriftCompactInputProtocol<'a>> ReadThrift<'a, R> for Compression {
 // TODO(ets): explore replacing this with a thrift_enum!(ThriftCompression) for the serialization
 // and then provide `From` impls to convert back and forth. This is necessary due to the addition
 // of compression level to some variants.
+#[cfg(feature = "std")]
 impl WriteThrift for Compression {
     const ELEMENT_TYPE: ElementType = ElementType::I32;
 
@@ -917,7 +928,7 @@ fn require_level(codec: &str, level: Option<u32>) -> Result<u32, ParquetError> {
 impl FromStr for Compression {
     type Err = ParquetError;
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
         let (codec, level) = split_compression_string(s)?;
 
         let c = match codec {
@@ -1089,6 +1100,7 @@ impl<'a, R: ThriftCompactInputProtocol<'a>> ReadThrift<'a, R> for EdgeInterpolat
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThrift for EdgeInterpolationAlgorithm {
     const ELEMENT_TYPE: ElementType = ElementType::I32;
     fn write_thrift<W: Write>(&self, writer: &mut ThriftCompactOutputProtocol<W>) -> Result<()> {
@@ -1330,6 +1342,7 @@ impl<'a, R: ThriftCompactInputProtocol<'a>> ReadThrift<'a, R> for ColumnOrder {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteThrift for ColumnOrder {
     const ELEMENT_TYPE: ElementType = ElementType::Struct;
 

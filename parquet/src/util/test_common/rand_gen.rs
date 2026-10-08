@@ -15,15 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::basic::Encoding;
 use crate::column::page::Page;
+use alloc::collections::VecDeque;
 use bytes::Bytes;
 use rand::{
     Rng,
     distr::{Distribution, StandardUniform, uniform::SampleUniform},
     rng,
 };
-use std::collections::VecDeque;
 
 use crate::data_type::*;
 use crate::encodings::encoding::{DictEncoder, Encoder};

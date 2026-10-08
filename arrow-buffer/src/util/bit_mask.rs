@@ -85,7 +85,8 @@ unsafe fn set_upto_64bits(
     let write_shift = offset_write % 8;
 
     if len >= 64 {
-        let chunk = unsafe { (data.as_ptr().add(read_byte) as *const u64).read_unaligned() };
+        // SAFETY: the caller guarantees `read_byte..(read_byte + 8)` is in range.
+        let chunk = unsafe { read_bytes_to_u64(data, read_byte, 8) };
         if read_shift == 0 {
             if write_shift == 0 {
                 // no shifting necessary
@@ -109,7 +110,7 @@ unsafe fn set_upto_64bits(
             unsafe { write_u64_bytes(write_data, write_byte, chunk) };
             (null_count, len)
         } else {
-            let len = 64 - std::cmp::max(read_shift, write_shift);
+            let len = 64 - core::cmp::max(read_shift, write_shift);
             let chunk = (chunk >> read_shift) << write_shift;
             let null_count = len - chunk.count_ones() as usize;
             unsafe { or_write_u64_bytes(write_data, write_byte, chunk) };
@@ -120,7 +121,7 @@ unsafe fn set_upto_64bits(
         unsafe { *write_data.get_unchecked_mut(write_byte) |= byte_chunk << write_shift };
         ((byte_chunk ^ 1) as usize, 1)
     } else {
-        let len = std::cmp::min(len, 64 - std::cmp::max(read_shift, write_shift));
+        let len = core::cmp::min(len, 64 - core::cmp::max(read_shift, write_shift));
         let bytes = ceil(len + read_shift, 8);
         // SAFETY: the args of `read_bytes_to_u64` are valid as read_byte + bytes <= data.len()
         let chunk = unsafe { read_bytes_to_u64(data, read_byte, bytes) };
@@ -136,23 +137,32 @@ unsafe fn set_upto_64bits(
     }
 }
 
+/// Reads `count` bytes as the low bytes of a little-endian `u64`.
+///
+/// Bit-packed buffers store the least significant byte first, so the word is
+/// assembled from bytes instead of read in the machine's own order: PolyASM
+/// publishes no such order, and a big-endian machine read the wrong word.
+///
 /// # Safety
 /// The caller must ensure `data` has `offset..(offset + 8)` range, and `count <= 8`.
 #[inline]
 unsafe fn read_bytes_to_u64(data: &[u8], offset: usize, count: usize) -> u64 {
     debug_assert!(count <= 8);
-    let mut tmp: u64 = 0;
+    let mut tmp = [0_u8; 8];
     let src = unsafe { data.as_ptr().add(offset) };
-    unsafe { std::ptr::copy_nonoverlapping(src, &mut tmp as *mut _ as *mut u8, count) };
-    tmp
+    unsafe { ::core::ptr::copy_nonoverlapping(src, tmp.as_mut_ptr(), count) };
+    u64::from_le_bytes(tmp)
 }
 
+/// Writes `chunk` as its little-endian bytes, the order bit-packed buffers use.
+///
 /// # Safety
 /// The caller must ensure `data` has `offset..(offset + 8)` range
 #[inline]
 unsafe fn write_u64_bytes(data: &mut [u8], offset: usize, chunk: u64) {
-    let ptr = unsafe { data.as_mut_ptr().add(offset) } as *mut u64;
-    unsafe { ptr.write_unaligned(chunk) };
+    let ptr = unsafe { data.as_mut_ptr().add(offset) };
+    let bytes = chunk.to_le_bytes();
+    unsafe { ::core::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len()) };
 }
 
 /// Similar to `write_u64_bytes`, but this method ORs the offset addressed `data` and `chunk`
@@ -163,17 +173,20 @@ unsafe fn write_u64_bytes(data: &mut [u8], offset: usize, chunk: u64) {
 #[inline]
 unsafe fn or_write_u64_bytes(data: &mut [u8], offset: usize, chunk: u64) {
     let ptr = unsafe { data.as_mut_ptr().add(offset) };
+    // The first byte is the least significant one, so it alone already holds
+    // bits this call keeps.
     let chunk = chunk | (unsafe { *ptr }) as u64;
-    unsafe { (ptr as *mut u64).write_unaligned(chunk) };
+    let bytes = chunk.to_le_bytes();
+    unsafe { ::core::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len()) };
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::bit_util::{get_bit, set_bit, unset_bit};
+    use core::fmt::Display;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng, TryRngCore};
-    use std::fmt::Display;
 
     #[test]
     fn test_set_bits_aligned() {
@@ -284,7 +297,7 @@ mod tests {
     /// prints a byte slice as a binary string like "01010101 10101010"
     struct BinaryFormatter<'a>(&'a [u8]);
     impl Display for BinaryFormatter<'_> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             for byte in self.0 {
                 write!(f, "{byte:08b} ")?;
             }
@@ -294,7 +307,7 @@ mod tests {
     }
 
     impl Display for SetBitsTest {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             writeln!(f, "SetBitsTest {{")?;
             writeln!(f, "  write_data:    {}", BinaryFormatter(&self.write_data))?;
             writeln!(f, "  data:          {}", BinaryFormatter(&self.data))?;

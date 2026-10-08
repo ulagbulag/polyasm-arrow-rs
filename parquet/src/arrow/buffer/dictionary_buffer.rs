@@ -15,13 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::arrow::buffer::offset_buffer::OffsetBuffer;
 use crate::arrow::record_reader::buffer::ValuesBuffer;
 use crate::errors::{ParquetError, Result};
+use alloc::sync::Arc;
+#[cfg(feature = "std")]
+use arrow_array::builder::{FixedSizeBinaryDictionaryBuilder, GenericByteDictionaryBuilder};
 use arrow_array::{Array, GenericByteArray, downcast_integer};
 use arrow_array::{
     ArrayRef, FixedSizeBinaryArray, OffsetSizeTrait,
-    builder::{FixedSizeBinaryDictionaryBuilder, GenericByteDictionaryBuilder},
     cast::AsArray,
     make_array,
     types::{ArrowDictionaryKeyType, ByteArrayType},
@@ -29,13 +40,20 @@ use arrow_array::{
 use arrow_buffer::{ArrowNativeType, Buffer};
 use arrow_data::ArrayDataBuilder;
 use arrow_schema::DataType as ArrowType;
-use std::sync::Arc;
 
 /// An array of variable length byte arrays that are potentially dictionary encoded
 /// and can be converted into a corresponding [`ArrayRef`]
 pub enum DictionaryBuffer<K: ArrowNativeType, V: OffsetSizeTrait> {
     Dict { keys: Vec<K>, values: ArrayRef },
     Values { values: OffsetBuffer<V> },
+}
+
+impl<K: ArrowNativeType, V: OffsetSizeTrait> Default for DictionaryBuffer<K, V> {
+    fn default() -> Self {
+        Self::Values {
+            values: Default::default(),
+        }
+    }
 }
 
 impl<K: ArrowNativeType + Ord, V: OffsetSizeTrait> DictionaryBuffer<K, V> {
@@ -95,7 +113,7 @@ impl<K: ArrowNativeType + Ord, V: OffsetSizeTrait> DictionaryBuffer<K, V> {
         match self {
             Self::Values { values } => Ok(values),
             Self::Dict { keys, values } => {
-                let mut spilled = OffsetBuffer::with_capacity(0);
+                let mut spilled = OffsetBuffer::default();
                 let data = values.to_data();
                 let dict_buffers = data.buffers();
                 let dict_offsets = dict_buffers[0].typed_data::<V>();
@@ -194,12 +212,6 @@ impl<K: ArrowNativeType + Ord, V: OffsetSizeTrait> DictionaryBuffer<K, V> {
 }
 
 impl<K: ArrowNativeType, V: OffsetSizeTrait> ValuesBuffer for DictionaryBuffer<K, V> {
-    fn with_capacity(capacity: usize) -> Self {
-        Self::Values {
-            values: OffsetBuffer::with_capacity(capacity),
-        }
-    }
-
     fn pad_nulls(
         &mut self,
         read_offset: usize,
@@ -219,6 +231,7 @@ impl<K: ArrowNativeType, V: OffsetSizeTrait> ValuesBuffer for DictionaryBuffer<K
     }
 }
 
+#[cfg(feature = "std")]
 macro_rules! dict_helper {
     ($k:ty, $array:ident) => {
         match $array.data_type() {
@@ -234,6 +247,7 @@ macro_rules! dict_helper {
     };
 }
 
+#[cfg(feature = "std")]
 fn pack_values(key_type: &ArrowType, values: &ArrayRef) -> Result<ArrayRef> {
     downcast_integer! {
         key_type => (dict_helper, values),
@@ -241,6 +255,16 @@ fn pack_values(key_type: &ArrowType, values: &ArrayRef) -> Result<ArrayRef> {
     }
 }
 
+/// Interning the values needs the byte dictionary builders, which `arrow-array`
+/// builds with `std` alone, so a `no_std` reader answers with an error.
+#[cfg(not(feature = "std"))]
+fn pack_values(_key_type: &ArrowType, _values: &ArrayRef) -> Result<ArrayRef> {
+    Err(nyi_err!(
+        "Reading a column as a dictionary requires the `std` feature"
+    ))
+}
+
+#[cfg(feature = "std")]
 fn pack_values_impl<K: ArrowDictionaryKeyType, T: ByteArrayType>(
     array: &GenericByteArray<T>,
 ) -> Result<ArrayRef> {
@@ -255,6 +279,7 @@ fn pack_values_impl<K: ArrowDictionaryKeyType, T: ByteArrayType>(
     Ok(Arc::new(raw))
 }
 
+#[cfg(feature = "std")]
 fn pack_fixed_values_impl<K: ArrowDictionaryKeyType>(
     array: &FixedSizeBinaryArray,
 ) -> Result<ArrayRef> {
@@ -286,7 +311,7 @@ mod tests {
 
         let d1: ArrayRef = Arc::new(StringArray::from(vec!["hello", "world", "", "a", "b"]));
 
-        let mut buffer = DictionaryBuffer::<i32, i32>::with_capacity(0);
+        let mut buffer = DictionaryBuffer::<i32, i32>::default();
 
         // Read some data preserving the dictionary
         let values = &[1, 0, 3, 2, 4];
@@ -308,7 +333,7 @@ mod tests {
         buffer.pad_nulls(read_offset, 2, 5, null_buffer.as_slice());
 
         assert_eq!(buffer.len(), 13);
-        let split = std::mem::replace(&mut buffer, DictionaryBuffer::with_capacity(0));
+        let split = core::mem::take(&mut buffer);
 
         let array = split.into_array(Some(null_buffer), &dict_type).unwrap();
         assert_eq!(array.data_type(), &dict_type);
@@ -343,7 +368,7 @@ mod tests {
             .unwrap()
             .extend_from_slice(&[0, 1, 0, 1]);
 
-        let array = std::mem::replace(&mut buffer, DictionaryBuffer::with_capacity(0))
+        let array = core::mem::take(&mut buffer)
             .into_array(None, &dict_type)
             .unwrap();
         assert_eq!(array.data_type(), &dict_type);
@@ -371,7 +396,7 @@ mod tests {
         let dict_type =
             ArrowType::Dictionary(Box::new(ArrowType::Int32), Box::new(ArrowType::Utf8));
 
-        let mut buffer = DictionaryBuffer::<i32, i32>::with_capacity(0);
+        let mut buffer = DictionaryBuffer::<i32, i32>::default();
         let d = Arc::new(StringArray::from(vec!["", "f"])) as ArrayRef;
         buffer.as_keys(&d).unwrap().extend_from_slice(&[0, 2, 0]);
 
@@ -382,7 +407,7 @@ mod tests {
             err
         );
 
-        let mut buffer = DictionaryBuffer::<i32, i32>::with_capacity(0);
+        let mut buffer = DictionaryBuffer::<i32, i32>::default();
         let d = Arc::new(StringArray::from(vec![""])) as ArrayRef;
         buffer.as_keys(&d).unwrap().extend_from_slice(&[0, 1, 0]);
 

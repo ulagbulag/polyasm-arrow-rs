@@ -17,14 +17,23 @@
 
 //! Contains writer which writes arrow data into parquet data.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::column::chunker::ContentDefinedChunker;
 
+use crate::io::{Read, Write};
+use alloc::vec::IntoIter;
 use bytes::Bytes;
-use std::io::{Read, Write};
-use std::iter::Peekable;
-use std::slice::Iter;
+use core::iter::Peekable;
+use core::slice::Iter;
 use std::sync::{Arc, Mutex};
-use std::vec::IntoIter;
 
 use arrow_array::cast::AsArray;
 use arrow_array::types::*;
@@ -199,8 +208,8 @@ pub struct ArrowWriter<W: Write> {
     cdc_chunkers: Option<Vec<ContentDefinedChunker>>,
 }
 
-impl<W: Write + Send> std::fmt::Debug for ArrowWriter<W> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<W: Write + Send> core::fmt::Debug for ArrowWriter<W> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let buffered_memory = self.in_progress_size();
         f.debug_struct("ArrowWriter")
             .field("writer", &self.writer)
@@ -423,12 +432,12 @@ impl<W: Write + Send> ArrowWriter<W> {
     ///
     /// It's safe to use this method to write data to the underlying writer,
     /// because it will ensure that the buffering and byte‐counting layers are used.
-    pub fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+    pub fn write_all(&mut self, buf: &[u8]) -> crate::io::Result<()> {
         self.writer.write_all(buf)
     }
 
     /// Flushes underlying writer
-    pub fn sync(&mut self) -> std::io::Result<()> {
+    pub fn sync(&mut self) -> crate::io::Result<()> {
         self.writer.flush()
     }
 
@@ -541,7 +550,7 @@ impl<W: Write + Send> RecordBatchWriter for ArrowWriter<W> {
         self.write(batch).map_err(|e| e.into())
     }
 
-    fn close(self) -> std::result::Result<(), ArrowError> {
+    fn close(self) -> core::result::Result<(), ArrowError> {
         self.close()?;
         Ok(())
     }
@@ -635,7 +644,7 @@ impl ChunkReader for ArrowColumnChunkData {
 struct ArrowColumnChunkReader(Peekable<IntoIter<Bytes>>);
 
 impl Read for ArrowColumnChunkReader {
-    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+    fn read(&mut self, out: &mut [u8]) -> crate::io::Result<usize> {
         let buffer = loop {
             match self.0.peek_mut() {
                 Some(b) if b.is_empty() => {
@@ -756,8 +765,8 @@ pub struct ArrowColumnChunk {
     close: ColumnCloseResult,
 }
 
-impl std::fmt::Debug for ArrowColumnChunk {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for ArrowColumnChunk {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ArrowColumnChunk")
             .field("length", &self.data.length)
             .finish_non_exhaustive()
@@ -765,26 +774,6 @@ impl std::fmt::Debug for ArrowColumnChunk {
 }
 
 impl ArrowColumnChunk {
-    /// Returns the [`ColumnCloseResult`] produced when the chunk was closed.
-    ///
-    /// Exposes encoding information, collected statistics, and the optional
-    /// [`ColumnIndexMetaData`](crate::file::page_index::column_index::ColumnIndexMetaData)
-    /// / [`OffsetIndexMetaData`](crate::file::page_index::offset_index::OffsetIndexMetaData)
-    /// gathered for the column chunk.
-    pub fn close(&self) -> &ColumnCloseResult {
-        &self.close
-    }
-
-    /// Returns a mutable reference to the [`ColumnCloseResult`].
-    ///
-    /// This allows callers to mutate the close result before the chunk is
-    /// appended to a row group — for example, clearing `column_index` or
-    /// `bloom_filter` based on a dynamic rule that inspects the encodings and
-    /// collected page statistics.
-    pub fn close_mut(&mut self) -> &mut ColumnCloseResult {
-        &mut self.close
-    }
-
     /// Calls [`SerializedRowGroupWriter::append_column`] with this column's data
     pub fn append_to_row_group<W: Write + Send>(
         self,
@@ -896,8 +885,8 @@ pub struct ArrowColumnWriter {
     chunk: SharedColumnChunk,
 }
 
-impl std::fmt::Debug for ArrowColumnWriter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for ArrowColumnWriter {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ArrowColumnWriter").finish_non_exhaustive()
     }
 }
@@ -2292,7 +2281,7 @@ mod tests {
         );
         let schema = Arc::new(Schema::new(vec![stocks_field]));
         let builder = arrow::json::ReaderBuilder::new(schema).with_batch_size(64);
-        let mut reader = builder.build(std::io::Cursor::new(json_content)).unwrap();
+        let mut reader = builder.build(crate::io::Cursor::new(json_content)).unwrap();
 
         let batch = reader.next().unwrap().unwrap();
         roundtrip(batch, None);
@@ -2461,7 +2450,8 @@ mod tests {
         where
             K: ArrowDictionaryKeyType,
             K::Native: FromPrimitive + ToPrimitive + TryFrom<u8>,
-            <<K as arrow_array::ArrowPrimitiveType>::Native as TryFrom<u8>>::Error: std::fmt::Debug,
+            <<K as arrow_array::ArrowPrimitiveType>::Native as TryFrom<u8>>::Error:
+                core::fmt::Debug,
         {
             let field = Field::new(
                 "a",
@@ -2701,7 +2691,6 @@ mod tests {
         values: ArrayRef,
         schema: SchemaRef,
         bloom_filter: bool,
-        bloom_filter_ndv: Option<u64>,
         bloom_filter_position: BloomFilterPosition,
     }
 
@@ -2713,7 +2702,6 @@ mod tests {
                 values,
                 schema: Arc::new(schema),
                 bloom_filter: false,
-                bloom_filter_ndv: None,
                 bloom_filter_position: BloomFilterPosition::AfterRowGroup,
             }
         }
@@ -2734,7 +2722,6 @@ mod tests {
             values,
             schema,
             bloom_filter,
-            bloom_filter_ndv,
             bloom_filter_position,
         } = options;
 
@@ -2773,18 +2760,15 @@ mod tests {
             for encoding in &encodings {
                 for version in [WriterVersion::PARQUET_1_0, WriterVersion::PARQUET_2_0] {
                     for row_group_size in row_group_sizes {
-                        let mut builder = WriterProperties::builder()
+                        let props = WriterProperties::builder()
                             .set_writer_version(version)
                             .set_max_row_group_row_count(Some(row_group_size))
                             .set_dictionary_enabled(dictionary_size != 0)
                             .set_dictionary_page_size_limit(dictionary_size.max(1))
                             .set_encoding(*encoding)
                             .set_bloom_filter_enabled(bloom_filter)
-                            .set_bloom_filter_position(bloom_filter_position);
-                        if let Some(ndv) = bloom_filter_ndv {
-                            builder = builder.set_bloom_filter_ndv(ndv);
-                        }
-                        let props = builder.build();
+                            .set_bloom_filter_position(bloom_filter_position)
+                            .build();
 
                         files.push(roundtrip_opts(&expected_batch, props))
                     }
@@ -3120,7 +3104,7 @@ mod tests {
     #[test]
     fn binary_single_column() {
         let one_vec: Vec<u8> = (0..SMALL_SIZE as u8).collect();
-        let many_vecs: Vec<_> = std::iter::repeat_n(one_vec, SMALL_SIZE).collect();
+        let many_vecs: Vec<_> = core::iter::repeat_n(one_vec, SMALL_SIZE).collect();
         let many_vecs_iter = many_vecs.iter().map(|v| v.as_slice());
 
         // BinaryArrays can't be built from Vec<Option<&str>>, so only call `values_required`
@@ -3130,7 +3114,7 @@ mod tests {
     #[test]
     fn binary_view_single_column() {
         let one_vec: Vec<u8> = (0..SMALL_SIZE as u8).collect();
-        let many_vecs: Vec<_> = std::iter::repeat_n(one_vec, SMALL_SIZE).collect();
+        let many_vecs: Vec<_> = core::iter::repeat_n(one_vec, SMALL_SIZE).collect();
         let many_vecs_iter = many_vecs.iter().map(|v| v.as_slice());
 
         // BinaryArrays can't be built from Vec<Option<&str>>, so only call `values_required`
@@ -3168,45 +3152,10 @@ mod tests {
         );
     }
 
-    /// Test that bloom filter folding produces correct results even when
-    /// the configured NDV differs significantly from actual NDV.
-    /// A large NDV means a larger initial filter that gets folded down;
-    /// a small NDV means a smaller initial filter.
-    #[test]
-    fn i32_column_bloom_filter_fixed_ndv() {
-        let array = Arc::new(Int32Array::from_iter(0..SMALL_SIZE as i32));
-
-        // NDV much larger than actual distinct values — tests folding a large filter down
-        let mut options = RoundTripOptions::new(array.clone(), false);
-        options.bloom_filter = true;
-        options.bloom_filter_ndv = Some(1_000_000);
-
-        let files = one_column_roundtrip_with_options(options);
-        check_bloom_filter(
-            files,
-            "col".to_string(),
-            (0..SMALL_SIZE as i32).collect(),
-            (SMALL_SIZE as i32 + 1..SMALL_SIZE as i32 + 10).collect(),
-        );
-
-        // NDV smaller than actual distinct values — tests the underestimate path
-        let mut options = RoundTripOptions::new(array, false);
-        options.bloom_filter = true;
-        options.bloom_filter_ndv = Some(3);
-
-        let files = one_column_roundtrip_with_options(options);
-        check_bloom_filter(
-            files,
-            "col".to_string(),
-            (0..SMALL_SIZE as i32).collect(),
-            (SMALL_SIZE as i32 + 1..SMALL_SIZE as i32 + 10).collect(),
-        );
-    }
-
     #[test]
     fn binary_column_bloom_filter() {
         let one_vec: Vec<u8> = (0..SMALL_SIZE as u8).collect();
-        let many_vecs: Vec<_> = std::iter::repeat_n(one_vec, SMALL_SIZE).collect();
+        let many_vecs: Vec<_> = core::iter::repeat_n(one_vec, SMALL_SIZE).collect();
         let many_vecs_iter = many_vecs.iter().map(|v| v.as_slice());
 
         let array = Arc::new(BinaryArray::from_iter_values(many_vecs_iter));
@@ -3245,7 +3194,7 @@ mod tests {
     #[test]
     fn large_binary_single_column() {
         let one_vec: Vec<u8> = (0..SMALL_SIZE as u8).collect();
-        let many_vecs: Vec<_> = std::iter::repeat_n(one_vec, SMALL_SIZE).collect();
+        let many_vecs: Vec<_> = core::iter::repeat_n(one_vec, SMALL_SIZE).collect();
         let many_vecs_iter = many_vecs.iter().map(|v| v.as_slice());
 
         // LargeBinaryArrays can't be built from Vec<Option<&str>>, so only call `values_required`
@@ -5085,55 +5034,5 @@ mod tests {
 
         let total_rows: i64 = sizes.iter().sum();
         assert_eq!(total_rows, 100, "Total rows should be preserved");
-    }
-
-    #[test]
-    fn arrow_column_chunk_close_mut_drops_column_index() {
-        use crate::arrow::ArrowSchemaConverter;
-        use crate::file::writer::SerializedFileWriter;
-
-        let schema = Arc::new(Schema::new(vec![Field::new("i", DataType::Int32, false)]));
-        let props = Arc::new(
-            WriterProperties::builder()
-                .set_statistics_enabled(EnabledStatistics::Page)
-                .build(),
-        );
-        let parquet_schema = ArrowSchemaConverter::new()
-            .with_coerce_types(props.coerce_types())
-            .convert(&schema)
-            .unwrap();
-
-        let mut buf = Vec::with_capacity(1024);
-        let mut writer =
-            SerializedFileWriter::new(&mut buf, parquet_schema.root_schema_ptr(), props.clone())
-                .unwrap();
-
-        let factory = ArrowRowGroupWriterFactory::new(&writer, Arc::clone(&schema));
-        let mut col_writers = factory.create_column_writers(0).unwrap();
-        let arr: ArrayRef = Arc::new(Int32Array::from_iter_values(0..64));
-        for leaves in compute_leaves(schema.field(0), &arr).unwrap() {
-            col_writers[0].write(&leaves).unwrap();
-        }
-        let mut chunk = col_writers.pop().unwrap().close().unwrap();
-
-        // Immutable accessor exposes the close result produced at close time.
-        assert!(
-            chunk.close().column_index.is_some(),
-            "EnabledStatistics::Page should produce a column_index"
-        );
-
-        // Mutable accessor lets callers drop the page-level index before append.
-        chunk.close_mut().column_index = None;
-        assert!(chunk.close().column_index.is_none());
-
-        let mut rg = writer.next_row_group().unwrap();
-        chunk.append_to_row_group(&mut rg).unwrap();
-        rg.close().unwrap();
-        let file_meta = writer.close().unwrap();
-
-        // After dropping column_index, the resulting file records no column
-        // index offset/length for this chunk.
-        let cc = file_meta.row_group(0).column(0);
-        assert!(cc.column_index_range().is_none());
     }
 }

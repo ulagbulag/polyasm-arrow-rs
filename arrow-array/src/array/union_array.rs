@@ -17,6 +17,11 @@
 #![allow(clippy::enum_clike_unportable_variant)]
 
 use crate::{Array, ArrayRef, make_array};
+use alloc::borrow::ToOwned;
+use alloc::collections::BTreeSet as HashSet;
+use alloc::string::ToString;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use arrow_buffer::bit_chunk_iterator::{BitChunkIterator, BitChunks};
 use arrow_buffer::buffer::NullBuffer;
 use arrow_buffer::{BooleanBuffer, Buffer, MutableBuffer, ScalarBuffer};
@@ -24,9 +29,7 @@ use arrow_data::{ArrayData, ArrayDataBuilder};
 use arrow_schema::{ArrowError, DataType, UnionFields, UnionMode};
 /// Contains the `UnionArray` type.
 ///
-use std::any::Any;
-use std::collections::HashSet;
-use std::sync::Arc;
+use core::any::Any;
 
 /// An array of [values of varying types](https://arrow.apache.org/docs/format/Columnar.html#union-layout)
 ///
@@ -938,7 +941,7 @@ unsafe impl Array for UnionArray {
         if let Some(o) = self.offsets.as_ref() {
             sum += o.inner().capacity()
         }
-        std::mem::size_of::<Self>()
+        core::mem::size_of::<Self>()
             + self
                 .fields
                 .iter()
@@ -959,8 +962,8 @@ unsafe impl Array for UnionArray {
     }
 }
 
-impl std::fmt::Debug for UnionArray {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl core::fmt::Debug for UnionArray {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let header = if self.is_dense() {
             "UnionArray(Dense)\n["
         } else {
@@ -990,7 +993,7 @@ impl std::fmt::Debug for UnionArray {
                 field.name(),
                 field.data_type()
             )?;
-            std::fmt::Debug::fmt(child, f)?;
+            core::fmt::Debug::fmt(child, f)?;
             writeln!(f)?;
         }
         writeln!(f, "]")

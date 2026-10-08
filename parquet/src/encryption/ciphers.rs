@@ -15,13 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::errors::ParquetError;
 use crate::errors::ParquetError::General;
 use crate::errors::Result;
 use crate::file::metadata::HeapSize;
-use ring::aead::{AES_128_GCM, AES_256_GCM, Aad, LessSafeKey, NonceSequence, UnboundKey};
+use core::fmt::Debug;
+use ring::aead::{AES_128_GCM, Aad, LessSafeKey, NonceSequence, UnboundKey};
 use ring::rand::{SecureRandom, SystemRandom};
-use std::fmt::Debug;
 
 const RIGHT_TWELVE: u128 = 0x0000_0000_ffff_ffff_ffff_ffff_ffff_ffff;
 pub(crate) const NONCE_LEN: usize = 12;
@@ -40,20 +49,10 @@ pub(crate) struct RingGcmBlockDecryptor {
 }
 
 impl RingGcmBlockDecryptor {
-    /// Create a new `RingGcmBlockDecryptor` with a given key.
     pub(crate) fn new(key_bytes: &[u8]) -> Result<Self> {
-        let algorithm = if key_bytes.len() == AES_128_GCM.key_len() {
-            &AES_128_GCM
-        } else if key_bytes.len() == AES_256_GCM.key_len() {
-            &AES_256_GCM
-        } else {
-            return Err(general_err!(
-                "Error creating RingGcmBlockDecryptor with unsupported key length: {}",
-                key_bytes.len()
-            ));
-        };
-        let key = UnboundKey::new(algorithm, key_bytes)
-            .map_err(|_| general_err!("Failed to create {:?} key", algorithm))?;
+        // AES-128-GCM is the one key size supported here
+        let key = UnboundKey::new(&AES_128_GCM, key_bytes)
+            .map_err(|_| General("Failed to create AES key".to_string()))?;
 
         Ok(Self {
             key: LessSafeKey::new(key),
@@ -154,19 +153,10 @@ impl RingGcmBlockEncryptor {
     /// return an error if it wraps around.
     pub(crate) fn new(key_bytes: &[u8]) -> Result<Self> {
         let rng = SystemRandom::new();
-        let algorithm = if key_bytes.len() == AES_128_GCM.key_len() {
-            &AES_128_GCM
-        } else if key_bytes.len() == AES_256_GCM.key_len() {
-            &AES_256_GCM
-        } else {
-            return Err(general_err!(
-                "Error creating RingGcmBlockEncryptor with unsupported key length: {}",
-                key_bytes.len()
-            ));
-        };
 
-        let key = UnboundKey::new(algorithm, key_bytes)
-            .map_err(|e| general_err!("Error creating {:?} key: {}", algorithm, e))?;
+        // AES-128-GCM is the one key size supported here
+        let key = UnboundKey::new(&AES_128_GCM, key_bytes)
+            .map_err(|e| general_err!("Error creating AES key: {}", e))?;
         let nonce = CounterNonce::new(&rng)?;
 
         Ok(Self {

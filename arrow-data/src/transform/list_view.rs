@@ -17,6 +17,7 @@
 
 use crate::ArrayData;
 use crate::transform::_MutableArrayData;
+use alloc::boxed::Box;
 use arrow_buffer::ArrowNativeType;
 use num_integer::Integer;
 use num_traits::CheckedAdd;

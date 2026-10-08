@@ -40,15 +40,24 @@
 //!
 //! \[1\] [parquet-format#nested-encoding](https://github.com/apache/parquet-format#nested-encoding)
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::column::chunker::CdcChunk;
 use crate::errors::{ParquetError, Result};
+use alloc::sync::Arc;
 use arrow_array::cast::AsArray;
 use arrow_array::{Array, ArrayRef, OffsetSizeTrait};
 use arrow_buffer::bit_iterator::BitIndexIterator;
 use arrow_buffer::{NullBuffer, OffsetBuffer, ScalarBuffer};
 use arrow_schema::{DataType, Field};
-use std::ops::Range;
-use std::sync::Arc;
+use core::ops::Range;
 
 /// Performs a depth-first scan of the children of `array`, constructing [`ArrayLevels`]
 /// for each leaf column encountered
@@ -336,42 +345,27 @@ impl LevelInfoBuilder {
                 })
             };
 
-        let write_null_run = |child: &mut LevelInfoBuilder, count: usize| {
-            if count > 0 {
-                child.visit_leaves(|leaf| {
-                    leaf.rep_levels
-                        .as_mut()
-                        .unwrap()
-                        .extend(std::iter::repeat_n(ctx.rep_level - 1, count));
-                    leaf.def_levels
-                        .as_mut()
-                        .unwrap()
-                        .extend(std::iter::repeat_n(ctx.def_level - 2, count));
-                });
-            }
+        let write_empty_slice = |child: &mut LevelInfoBuilder| {
+            child.visit_leaves(|leaf| {
+                let rep_levels = leaf.rep_levels.as_mut().unwrap();
+                rep_levels.push(ctx.rep_level - 1);
+                let def_levels = leaf.def_levels.as_mut().unwrap();
+                def_levels.push(ctx.def_level - 1);
+            })
         };
 
-        let write_empty_run = |child: &mut LevelInfoBuilder, count: usize| {
-            if count > 0 {
-                child.visit_leaves(|leaf| {
-                    leaf.rep_levels
-                        .as_mut()
-                        .unwrap()
-                        .extend(std::iter::repeat_n(ctx.rep_level - 1, count));
-                    leaf.def_levels
-                        .as_mut()
-                        .unwrap()
-                        .extend(std::iter::repeat_n(ctx.def_level - 1, count));
-                });
-            }
+        let write_null_slice = |child: &mut LevelInfoBuilder| {
+            child.visit_leaves(|leaf| {
+                let rep_levels = leaf.rep_levels.as_mut().unwrap();
+                rep_levels.push(ctx.rep_level - 1);
+                let def_levels = leaf.def_levels.as_mut().unwrap();
+                def_levels.push(ctx.def_level - 2);
+            })
         };
 
         match nulls {
             Some(nulls) => {
                 let null_offset = range.start;
-                let mut pending_nulls: usize = 0;
-                let mut pending_empties: usize = 0;
-
                 // TODO: Faster bitmask iteration (#1757)
                 for (idx, w) in offsets.windows(2).enumerate() {
                     let is_valid = nulls.is_valid(idx + null_offset);
@@ -379,38 +373,24 @@ impl LevelInfoBuilder {
                     let end_idx = w[1].as_usize();
 
                     if !is_valid {
-                        write_empty_run(child, pending_empties);
-                        pending_empties = 0;
-                        pending_nulls += 1;
+                        write_null_slice(child)
                     } else if start_idx == end_idx {
-                        write_null_run(child, pending_nulls);
-                        pending_nulls = 0;
-                        pending_empties += 1;
+                        write_empty_slice(child)
                     } else {
-                        write_null_run(child, pending_nulls);
-                        pending_nulls = 0;
-                        write_empty_run(child, pending_empties);
-                        pending_empties = 0;
-                        write_non_null_slice(child, start_idx, end_idx);
+                        write_non_null_slice(child, start_idx, end_idx)
                     }
                 }
-                write_null_run(child, pending_nulls);
-                write_empty_run(child, pending_empties);
             }
             None => {
-                let mut pending_empties: usize = 0;
                 for w in offsets.windows(2) {
                     let start_idx = w[0].as_usize();
                     let end_idx = w[1].as_usize();
                     if start_idx == end_idx {
-                        pending_empties += 1;
+                        write_empty_slice(child)
                     } else {
-                        write_empty_run(child, pending_empties);
-                        pending_empties = 0;
-                        write_non_null_slice(child, start_idx, end_idx);
+                        write_non_null_slice(child, start_idx, end_idx)
                     }
                 }
-                write_empty_run(child, pending_empties);
             }
         }
     }
@@ -515,10 +495,10 @@ impl LevelInfoBuilder {
                     let len = range.end - range.start;
 
                     let def_levels = info.def_levels.as_mut().unwrap();
-                    def_levels.extend(std::iter::repeat_n(ctx.def_level - 1, len));
+                    def_levels.extend(core::iter::repeat_n(ctx.def_level - 1, len));
 
                     if let Some(rep_levels) = info.rep_levels.as_mut() {
-                        rep_levels.extend(std::iter::repeat_n(ctx.rep_level, len));
+                        rep_levels.extend(core::iter::repeat_n(ctx.rep_level, len));
                     }
                 })
             }
@@ -606,9 +586,9 @@ impl LevelInfoBuilder {
             let len = end_idx - start_idx;
             child.visit_leaves(|leaf| {
                 let rep_levels = leaf.rep_levels.as_mut().unwrap();
-                rep_levels.extend(std::iter::repeat_n(ctx.rep_level - 1, len));
+                rep_levels.extend(core::iter::repeat_n(ctx.rep_level - 1, len));
                 let def_levels = leaf.def_levels.as_mut().unwrap();
-                def_levels.extend(std::iter::repeat_n(ctx.def_level - 1, len));
+                def_levels.extend(core::iter::repeat_n(ctx.def_level - 1, len));
             })
         };
 
@@ -675,7 +655,7 @@ impl LevelInfoBuilder {
                         );
                     }
                     None => {
-                        let iter = std::iter::repeat_n(info.max_def_level, len);
+                        let iter = core::iter::repeat_n(info.max_def_level, len);
                         def_levels.extend(iter);
                         info.non_null_indices.extend(range);
                     }
@@ -685,7 +665,7 @@ impl LevelInfoBuilder {
         }
 
         if let Some(rep_levels) = &mut info.rep_levels {
-            rep_levels.extend(std::iter::repeat_n(info.max_rep_level, len))
+            rep_levels.extend(core::iter::repeat_n(info.max_rep_level, len))
         }
     }
 
@@ -835,29 +815,37 @@ impl ArrayLevels {
 
     /// Create a sliced view of this `ArrayLevels` for a CDC chunk.
     ///
-    /// The chunk's `value_offset`/`num_values` select the relevant slice of
-    /// `non_null_indices`. The array is sliced to the range covered by
-    /// those indices, and they are shifted to be relative to the slice.
+    /// Note: `def_levels`, `rep_levels`, and `non_null_indices` are copied (a real copy),
+    /// while `array` is sliced without copying.
     pub(crate) fn slice_for_chunk(&self, chunk: &CdcChunk) -> Self {
-        let def_levels = self.def_levels.as_ref().map(|levels| {
-            levels[chunk.level_offset..chunk.level_offset + chunk.num_levels].to_vec()
-        });
-        let rep_levels = self.rep_levels.as_ref().map(|levels| {
-            levels[chunk.level_offset..chunk.level_offset + chunk.num_levels].to_vec()
-        });
+        let level_offset = chunk.level_offset;
+        let num_levels = chunk.num_levels;
+        let value_offset = chunk.value_offset;
+        let num_values = chunk.num_values;
+        let def_levels = self
+            .def_levels
+            .as_ref()
+            .map(|levels| levels[level_offset..level_offset + num_levels].to_vec());
+        let rep_levels = self
+            .rep_levels
+            .as_ref()
+            .map(|levels| levels[level_offset..level_offset + num_levels].to_vec());
 
-        // Select the non-null indices for this chunk.
-        let nni = &self.non_null_indices[chunk.value_offset..chunk.value_offset + chunk.num_values];
-        // Compute the array range spanned by the non-null indices.
-        // When nni is empty (all-null chunk), start=0, end=0 → zero-length
-        // array slice; write_batch_internal will process only the def/rep
-        // levels and write no values.
-        let start = nni.first().copied().unwrap_or(0);
-        let end = nni.last().map_or(0, |&i| i + 1);
-        // Shift indices to be relative to the sliced array.
-        let non_null_indices = nni.iter().map(|&idx| idx - start).collect();
-        // Slice the array to the computed range.
-        let array = self.array.slice(start, end - start);
+        // Filter non_null_indices to [value_offset, value_offset + num_values)
+        // and shift by -value_offset. Use binary search since the slice is sorted.
+        let value_end = value_offset + num_values;
+        let start = self
+            .non_null_indices
+            .partition_point(|&idx| idx < value_offset);
+        let end = self
+            .non_null_indices
+            .partition_point(|&idx| idx < value_end);
+        let non_null_indices: Vec<usize> = self.non_null_indices[start..end]
+            .iter()
+            .map(|&idx| idx - value_offset)
+            .collect();
+
+        let array = self.array.slice(value_offset, num_values);
         let logical_nulls = array.logical_nulls();
 
         Self {

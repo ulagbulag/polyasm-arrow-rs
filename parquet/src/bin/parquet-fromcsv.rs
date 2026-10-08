@@ -70,6 +70,15 @@
 //! ```
 //!
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use std::{
     fmt::Display,
     fs::{File, read_to_string},
@@ -93,14 +102,14 @@ use parquet::{
 #[derive(Debug)]
 enum ParquetFromCsvError {
     CommandLineParseError(clap::Error),
-    IoError(std::io::Error),
+    IoError(crate::io::Error),
     ArrowError(ArrowError),
     ParquetError(ParquetError),
     WithContext(String, Box<Self>),
 }
 
-impl From<std::io::Error> for ParquetFromCsvError {
-    fn from(e: std::io::Error) -> Self {
+impl From<crate::io::Error> for ParquetFromCsvError {
+    fn from(e: crate::io::Error) -> Self {
         Self::IoError(e)
     }
 }
@@ -134,7 +143,7 @@ impl ParquetFromCsvError {
 }
 
 impl Display for ParquetFromCsvError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             ParquetFromCsvError::CommandLineParseError(e) => write!(f, "{e}"),
             ParquetFromCsvError::IoError(e) => write!(f, "{e}"),
@@ -440,7 +449,7 @@ mod tests {
         path_buf.push("parquet-fromcsv-help.txt");
         let expected = std::fs::read_to_string(path_buf).unwrap();
         let mut buffer_vec = Vec::new();
-        let mut buffer = std::io::Cursor::new(&mut buffer_vec);
+        let mut buffer = crate::io::Cursor::new(&mut buffer_vec);
         cmd.write_long_help(&mut buffer).unwrap();
         // Remove Parquet version string from the help text
         let mut actual = String::from_utf8(buffer_vec).unwrap();

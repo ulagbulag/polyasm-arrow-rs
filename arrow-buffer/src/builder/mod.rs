@@ -17,6 +17,7 @@
 
 //! Buffer builders
 
+use alloc_crate::vec::Vec;
 mod boolean;
 mod null;
 mod offset;
@@ -26,7 +27,7 @@ pub use null::*;
 pub use offset::*;
 
 use crate::{ArrowNativeType, Buffer, MutableBuffer};
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// Builder for creating Arrow [`Buffer`] objects
 ///
@@ -83,7 +84,7 @@ impl<T: ArrowNativeType> BufferBuilder<T> {
     /// ```
     #[inline]
     pub fn new(capacity: usize) -> Self {
-        let buffer = MutableBuffer::new(capacity * std::mem::size_of::<T>());
+        let buffer = MutableBuffer::new(capacity * core::mem::size_of::<T>());
 
         Self {
             buffer,
@@ -115,7 +116,7 @@ impl<T: ArrowNativeType> BufferBuilder<T> {
     /// assert_eq!(builder.len(), 1);
     /// ```
     pub fn len(&self) -> usize {
-        self.buffer.len() / std::mem::size_of::<T>()
+        self.buffer.len() / core::mem::size_of::<T>()
     }
 
     /// Returns whether the internal buffer is empty.
@@ -140,7 +141,7 @@ impl<T: ArrowNativeType> BufferBuilder<T> {
     /// functions.
     pub fn capacity(&self) -> usize {
         let byte_capacity = self.buffer.capacity();
-        byte_capacity / std::mem::size_of::<T>()
+        byte_capacity / core::mem::size_of::<T>()
     }
 
     /// Increases the number of elements in the internal buffer by `n`
@@ -161,7 +162,7 @@ impl<T: ArrowNativeType> BufferBuilder<T> {
     /// ```
     #[inline]
     pub fn advance(&mut self, i: usize) {
-        self.buffer.extend_zeros(i * std::mem::size_of::<T>());
+        self.buffer.extend_zeros(i * core::mem::size_of::<T>());
     }
 
     /// Reserves memory for _at least_ `n` more elements of type `T`.
@@ -177,7 +178,7 @@ impl<T: ArrowNativeType> BufferBuilder<T> {
     /// ```
     #[inline]
     pub fn reserve(&mut self, n: usize) {
-        self.buffer.reserve(n * std::mem::size_of::<T>());
+        self.buffer.reserve(n * core::mem::size_of::<T>());
     }
 
     /// Appends a value of type `T` into the builder,
@@ -213,7 +214,7 @@ impl<T: ArrowNativeType> BufferBuilder<T> {
     #[inline]
     pub fn append_n(&mut self, n: usize, v: T) {
         self.reserve(n);
-        self.extend(std::iter::repeat_n(v, n))
+        self.extend(core::iter::repeat_n(v, n))
     }
 
     /// Appends `n`, zero-initialized values
@@ -230,7 +231,7 @@ impl<T: ArrowNativeType> BufferBuilder<T> {
     /// ```
     #[inline]
     pub fn append_n_zeroed(&mut self, n: usize) {
-        self.buffer.extend_zeros(n * std::mem::size_of::<T>());
+        self.buffer.extend_zeros(n * core::mem::size_of::<T>());
     }
 
     /// Appends a slice of type `T`, growing the internal buffer as needed.
@@ -266,7 +267,7 @@ impl<T: ArrowNativeType> BufferBuilder<T> {
         // - MutableBuffer is aligned and initialized for len elements of T
         // - MutableBuffer corresponds to a single allocation
         // - MutableBuffer does not support modification whilst active immutable borrows
-        unsafe { std::slice::from_raw_parts(self.buffer.as_ptr() as _, self.len()) }
+        unsafe { core::slice::from_raw_parts(self.buffer.as_ptr() as _, self.len()) }
     }
 
     /// View the contents of this buffer as a mutable slice
@@ -290,7 +291,7 @@ impl<T: ArrowNativeType> BufferBuilder<T> {
         // - MutableBuffer is aligned and initialized for len elements of T
         // - MutableBuffer corresponds to a single allocation
         // - MutableBuffer does not support modification whilst active immutable borrows
-        unsafe { std::slice::from_raw_parts_mut(self.buffer.as_mut_ptr() as _, self.len()) }
+        unsafe { core::slice::from_raw_parts_mut(self.buffer.as_mut_ptr() as _, self.len()) }
     }
 
     /// Shorten this BufferBuilder to `len` items
@@ -314,7 +315,7 @@ impl<T: ArrowNativeType> BufferBuilder<T> {
     /// ```
     #[inline]
     pub fn truncate(&mut self, len: usize) {
-        self.buffer.truncate(len * std::mem::size_of::<T>());
+        self.buffer.truncate(len * core::mem::size_of::<T>());
     }
 
     /// # Safety
@@ -346,7 +347,7 @@ impl<T: ArrowNativeType> BufferBuilder<T> {
     /// ```
     #[inline]
     pub fn finish(&mut self) -> Buffer {
-        let buf = std::mem::take(&mut self.buffer);
+        let buf = core::mem::take(&mut self.buffer);
         buf.into()
     }
 

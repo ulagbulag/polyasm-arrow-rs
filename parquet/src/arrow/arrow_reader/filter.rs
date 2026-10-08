@@ -15,10 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::arrow::ProjectionMask;
 use arrow_array::{BooleanArray, RecordBatch};
 use arrow_schema::ArrowError;
-use std::fmt::{Debug, Formatter};
+use core::fmt::{Debug, Formatter};
 
 /// A predicate operating on [`RecordBatch`]
 ///
@@ -180,7 +189,7 @@ pub struct RowFilter {
 }
 
 impl Debug for RowFilter {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "RowFilter {{ {} predicates: }}", self.predicates.len())
     }
 }

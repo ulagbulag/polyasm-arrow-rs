@@ -193,7 +193,7 @@ fn div_rem_word(hi: u64, lo: u64, divisor: u64) -> (u64, u64) {
     unsafe {
         let mut quot = lo;
         let mut rem = hi;
-        std::arch::asm!(
+        core::arch::asm!(
             "div {divisor}",
             divisor = in(reg) divisor,
             inout("rax") quot,
@@ -284,19 +284,19 @@ fn full_shr<const N: usize>(a: &ArrayPlusOne<u64, N>, shift: u32) -> [u64; N] {
 #[repr(C)]
 struct ArrayPlusOne<T, const N: usize>([T; N], T);
 
-impl<T, const N: usize> std::ops::Deref for ArrayPlusOne<T, N> {
+impl<T, const N: usize> core::ops::Deref for ArrayPlusOne<T, N> {
     type Target = [T];
 
     #[inline]
     fn deref(&self) -> &Self::Target {
         let x = self as *const Self;
-        unsafe { std::slice::from_raw_parts(x as *const T, N + 1) }
+        unsafe { core::slice::from_raw_parts(x as *const T, N + 1) }
     }
 }
 
-impl<T, const N: usize> std::ops::DerefMut for ArrayPlusOne<T, N> {
+impl<T, const N: usize> core::ops::DerefMut for ArrayPlusOne<T, N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         let x = self as *mut Self;
-        unsafe { std::slice::from_raw_parts_mut(x as *mut T, N + 1) }
+        unsafe { core::slice::from_raw_parts_mut(x as *mut T, N + 1) }
     }
 }

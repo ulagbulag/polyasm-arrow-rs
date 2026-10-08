@@ -20,11 +20,11 @@
 mod binary_array;
 
 use crate::types::*;
+use alloc::sync::Arc;
 use arrow_buffer::{ArrowNativeType, Buffer, NullBuffer, OffsetBuffer, ScalarBuffer};
 use arrow_data::ArrayData;
 use arrow_schema::{DataType, IntervalUnit, TimeUnit};
-use std::any::Any;
-use std::sync::Arc;
+use core::any::Any;
 
 pub use binary_array::*;
 
@@ -97,7 +97,7 @@ use crate::iterator::ArrayIter;
 /// This trait might be sealed in the future. Use at your own risk.
 ///
 /// [this discussion]: https://github.com/apache/arrow-rs/pull/9234#pullrequestreview-3708950936
-pub unsafe trait Array: std::fmt::Debug + Send + Sync {
+pub unsafe trait Array: core::fmt::Debug + Send + Sync {
     /// Returns the array as [`Any`] so that it can be
     /// downcasted to a specific implementation.
     ///
@@ -758,7 +758,7 @@ pub trait ListLikeArray: Array {
 
     /// Returns the start and end indices into the values array for the list
     /// element at `index`.
-    fn element_range(&self, index: usize) -> std::ops::Range<usize>;
+    fn element_range(&self, index: usize) -> core::ops::Range<usize>;
 }
 
 impl PartialEq for dyn Array + '_ {
@@ -1043,12 +1043,16 @@ unsafe fn get_offsets_from_buffer<O: ArrowNativeType>(
 }
 
 /// Helper function for printing potentially long arrays.
-fn print_long_array<A, F>(array: &A, f: &mut std::fmt::Formatter, print_item: F) -> std::fmt::Result
+fn print_long_array<A, F>(
+    array: &A,
+    f: &mut core::fmt::Formatter,
+    print_item: F,
+) -> core::fmt::Result
 where
     A: Array,
-    F: Fn(&A, usize, &mut std::fmt::Formatter) -> std::fmt::Result,
+    F: Fn(&A, usize, &mut core::fmt::Formatter) -> core::fmt::Result,
 {
-    let head = std::cmp::min(10, array.len());
+    let head = core::cmp::min(10, array.len());
 
     for i in 0..head {
         if array.is_null(i) {
@@ -1064,7 +1068,7 @@ where
             writeln!(f, "  ...{} elements...,", array.len() - 20)?;
         }
 
-        let tail = std::cmp::max(head, array.len() - 10);
+        let tail = core::cmp::max(head, array.len() - 10);
 
         for i in tail..array.len() {
             if array.is_null(i) {
@@ -1298,7 +1302,7 @@ mod tests {
 
         assert_eq!(0, null_arr.get_buffer_memory_size());
         assert_eq!(
-            std::mem::size_of::<usize>(),
+            core::mem::size_of::<usize>(),
             null_arr.get_array_memory_size()
         );
     }
@@ -1311,7 +1315,7 @@ mod tests {
         // subtract empty array to avoid magic numbers for the size of additional fields
         assert_eq!(
             arr.get_array_memory_size() - empty.get_array_memory_size(),
-            128 * std::mem::size_of::<i64>()
+            128 * core::mem::size_of::<i64>()
         );
     }
 
@@ -1343,7 +1347,7 @@ mod tests {
         // which includes the optional validity buffer
         // plus one buffer on the heap
         assert_eq!(
-            std::mem::size_of::<PrimitiveArray<Int64Type>>(),
+            core::mem::size_of::<PrimitiveArray<Int64Type>>(),
             empty_with_bitmap.get_array_memory_size()
         );
 
@@ -1351,7 +1355,7 @@ mod tests {
         // the size of the validity bitmap is rounded up to 64 bytes
         assert_eq!(
             arr.get_array_memory_size() - empty_with_bitmap.get_array_memory_size(),
-            128 * std::mem::size_of::<i64>() + 64
+            128 * core::mem::size_of::<i64>() + 64
         );
     }
 
@@ -1382,13 +1386,13 @@ mod tests {
         let arr = DictionaryArray::<Int16Type>::from(dict_data);
         let empty = DictionaryArray::<Int16Type>::from(empty_data);
 
-        let expected_keys_size = 256 * std::mem::size_of::<i16>();
+        let expected_keys_size = 256 * core::mem::size_of::<i16>();
         assert_eq!(
             arr.keys().get_array_memory_size() - empty.keys().get_array_memory_size(),
             expected_keys_size
         );
 
-        let expected_values_size = 16 * std::mem::size_of::<i64>();
+        let expected_values_size = 16 * core::mem::size_of::<i64>();
         assert_eq!(
             arr.values().get_array_memory_size() - empty.values().get_array_memory_size(),
             expected_values_size

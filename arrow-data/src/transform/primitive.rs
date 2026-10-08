@@ -16,9 +16,10 @@
 // under the License.
 
 use crate::ArrayData;
+use alloc::boxed::Box;
 use arrow_buffer::ArrowNativeType;
-use std::mem::size_of;
-use std::ops::Add;
+use core::mem::size_of;
+use core::ops::Add;
 
 use super::{_MutableArrayData, Extend};
 

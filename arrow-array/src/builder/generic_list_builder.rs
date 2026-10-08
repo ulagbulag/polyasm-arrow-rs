@@ -17,11 +17,13 @@
 
 use crate::builder::ArrayBuilder;
 use crate::{Array, ArrayRef, GenericListArray, OffsetSizeTrait};
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use arrow_buffer::NullBufferBuilder;
 use arrow_buffer::{Buffer, OffsetBuffer};
 use arrow_schema::{Field, FieldRef};
-use std::any::Any;
-use std::sync::Arc;
+use core::any::Any;
 
 /// Builder for [`GenericListArray`]
 ///
@@ -166,10 +168,6 @@ where
     fn finish_cloned(&self) -> ArrayRef {
         Arc::new(self.finish_cloned())
     }
-
-    fn finish_preserve_values(&mut self) -> ArrayRef {
-        Arc::new(self.finish_preserve_values())
-    }
 }
 
 impl<OffsetSize: OffsetSizeTrait, T: ArrayBuilder> GenericListBuilder<OffsetSize, T>
@@ -262,7 +260,7 @@ where
         T: Extend<Option<V>>,
         I: IntoIterator<Item = Option<V>>,
     {
-        self.extend(std::iter::once(Some(i)))
+        self.extend(core::iter::once(Some(i)))
     }
 
     /// Append a null to this [`GenericListBuilder`]
@@ -279,7 +277,7 @@ where
     pub fn append_nulls(&mut self, n: usize) {
         let next_offset = self.next_offset();
         self.offsets_builder
-            .extend(std::iter::repeat_n(next_offset, n));
+            .extend(core::iter::repeat_n(next_offset, n));
         self.null_buffer_builder.append_n_nulls(n);
     }
 
@@ -303,7 +301,7 @@ where
         let values = self.values_builder.finish();
         let nulls = self.null_buffer_builder.finish();
 
-        let offsets = Buffer::from_vec(std::mem::take(&mut self.offsets_builder));
+        let offsets = Buffer::from_vec(core::mem::take(&mut self.offsets_builder));
         // Safety: Safe by construction
         let offsets = unsafe { OffsetBuffer::new_unchecked(offsets.into()) };
         self.offsets_builder.push(OffsetSize::zero());
@@ -324,23 +322,6 @@ where
         let offsets = Buffer::from_slice_ref(self.offsets_builder.as_slice());
         // Safety: safe by construction
         let offsets = unsafe { OffsetBuffer::new_unchecked(offsets.into()) };
-
-        let field = match &self.field {
-            Some(f) => f.clone(),
-            None => Arc::new(Field::new_list_field(values.data_type().clone(), true)),
-        };
-
-        GenericListArray::new(field, offsets, values, nulls)
-    }
-
-    fn finish_preserve_values(&mut self) -> GenericListArray<OffsetSize> {
-        let values = self.values_builder.finish_preserve_values();
-        let nulls = self.null_buffer_builder.finish();
-
-        let offsets = Buffer::from_vec(std::mem::take(&mut self.offsets_builder));
-        // Safety: Safe by construction
-        let offsets = unsafe { OffsetBuffer::new_unchecked(offsets.into()) };
-        self.offsets_builder.push(OffsetSize::zero());
 
         let field = match &self.field {
             Some(f) => f.clone(),
@@ -385,7 +366,7 @@ where
 mod tests {
     use super::*;
     use crate::Int32Array;
-    use crate::builder::{Int32Builder, ListBuilder, make_builder, tests::PreserveValuesMock};
+    use crate::builder::{Int32Builder, ListBuilder, make_builder};
     use crate::cast::AsArray;
     use crate::types::Int32Type;
     use arrow_schema::DataType;
@@ -838,18 +819,5 @@ mod tests {
         let mut builder = ListBuilder::new(Int32Builder::new()).with_field(field.clone());
         builder.append_value([Some(1)]);
         builder.finish();
-    }
-
-    #[test]
-    fn test_finish_preserve_values() {
-        let mut builder = ListBuilder::new(PreserveValuesMock::default());
-
-        builder.values().inner.append_value(1);
-        builder.append(true);
-
-        let arr = builder.finish_preserve_values();
-
-        assert_eq!(1, arr.len());
-        assert_eq!(1, builder.values().called);
     }
 }

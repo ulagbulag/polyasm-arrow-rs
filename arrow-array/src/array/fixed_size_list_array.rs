@@ -19,12 +19,12 @@ use crate::array::print_long_array;
 use crate::builder::{FixedSizeListBuilder, PrimitiveBuilder};
 use crate::iterator::FixedSizeListIter;
 use crate::{Array, ArrayAccessor, ArrayRef, ArrowPrimitiveType, make_array};
+use alloc::sync::Arc;
 use arrow_buffer::ArrowNativeType;
 use arrow_buffer::buffer::NullBuffer;
 use arrow_data::{ArrayData, ArrayDataBuilder};
 use arrow_schema::{ArrowError, DataType, FieldRef};
-use std::any::Any;
-use std::sync::Arc;
+use core::any::Any;
 
 /// An array of [fixed length lists], similar to JSON arrays
 /// (e.g. `["A", "B"]`).
@@ -522,7 +522,7 @@ unsafe impl Array for FixedSizeListArray {
     }
 
     fn get_array_memory_size(&self) -> usize {
-        let mut size = std::mem::size_of::<Self>() + self.values.get_array_memory_size();
+        let mut size = core::mem::size_of::<Self>() + self.values.get_array_memory_size();
         if let Some(n) = self.nulls.as_ref() {
             size += n.buffer().capacity();
         }
@@ -543,7 +543,7 @@ impl super::ListLikeArray for FixedSizeListArray {
         self.values()
     }
 
-    fn element_range(&self, index: usize) -> std::ops::Range<usize> {
+    fn element_range(&self, index: usize) -> core::ops::Range<usize> {
         let value_length = self.value_length().as_usize();
         let offset = index * value_length;
         offset..(offset + value_length)
@@ -562,11 +562,11 @@ impl ArrayAccessor for FixedSizeListArray {
     }
 }
 
-impl std::fmt::Debug for FixedSizeListArray {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl core::fmt::Debug for FixedSizeListArray {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "FixedSizeListArray<{}>\n[\n", self.value_length())?;
         print_long_array(self, f, |array, index, f| {
-            std::fmt::Debug::fmt(&array.value(index), f)
+            core::fmt::Debug::fmt(&array.value(index), f)
         })?;
         write!(f, "]")
     }
@@ -645,7 +645,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "assertion failed: end <= self.len()")]
+    #[should_panic(expected = "assertion failed: (offset + length) <= self.len()")]
     // Different error messages, so skip for now
     // https://github.com/apache/arrow-rs/issues/1545
     #[cfg(not(feature = "force_validate"))]

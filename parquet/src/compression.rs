@@ -20,6 +20,15 @@
 //! See [`Compression`](crate::basic::Compression) enum for all available compression
 //! algorithms.
 //!
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 #[cfg_attr(
     feature = "experimental",
     doc = r##"
@@ -122,7 +131,7 @@ impl CodecOptionsBuilder {
 }
 
 /// Defines valid compression levels.
-pub(crate) trait CompressionLevel<T: std::fmt::Display + std::cmp::PartialOrd> {
+pub(crate) trait CompressionLevel<T: core::fmt::Display + core::cmp::PartialOrd> {
     const MINIMUM_LEVEL: T;
     const MAXIMUM_LEVEL: T;
 
@@ -198,6 +207,9 @@ pub fn create_codec(codec: CodecType, _options: &CodecOptions) -> Result<Option<
 
 #[cfg(any(feature = "snap", test))]
 mod snappy_codec {
+    #[cfg(not(feature = "std"))]
+    use alloc::vec::Vec;
+
     use snap::raw::{Decoder, Encoder, decompress_len, max_compress_len};
 
     use crate::compression::Codec;
@@ -255,7 +267,7 @@ pub use snappy_codec::*;
 #[cfg(any(feature = "flate2", test))]
 mod gzip_codec {
 
-    use std::io::{Read, Write};
+    use crate::io::{Read, Write};
 
     use flate2::{Compression, read, write};
 
@@ -360,7 +372,7 @@ impl GzipLevel {
 #[cfg(any(feature = "brotli", test))]
 mod brotli_codec {
 
-    use std::io::{Read, Write};
+    use crate::io::{Read, Write};
 
     use crate::compression::Codec;
     use crate::errors::Result;
@@ -441,7 +453,7 @@ impl BrotliLevel {
 
 #[cfg(any(feature = "lz4", test))]
 mod lz4_codec {
-    use std::io::{Read, Write};
+    use crate::io::{Read, Write};
 
     use crate::compression::Codec;
     use crate::errors::{ParquetError, Result};
@@ -483,7 +495,7 @@ mod lz4_codec {
             let mut encoder = lz4_flex::frame::FrameEncoder::new(output_buf);
             let mut from = 0;
             loop {
-                let to = std::cmp::min(from + LZ4_BUFFER_SIZE, input_buf.len());
+                let to = core::cmp::min(from + LZ4_BUFFER_SIZE, input_buf.len());
                 encoder.write_all(&input_buf[from..to])?;
                 from += LZ4_BUFFER_SIZE;
                 if from >= input_buf.len() {
@@ -657,10 +669,10 @@ mod lz4_hadoop_codec {
     use crate::compression::lz4_codec::LZ4Codec;
     use crate::compression::lz4_raw_codec::LZ4RawCodec;
     use crate::errors::{ParquetError, Result};
-    use std::io;
+    use crate::io;
 
     /// Size of u32 type.
-    const SIZE_U32: usize = std::mem::size_of::<u32>();
+    const SIZE_U32: usize = core::mem::size_of::<u32>();
 
     /// Length of the LZ4_HADOOP prefix.
     const PREFIX_LEN: usize = SIZE_U32 * 2;

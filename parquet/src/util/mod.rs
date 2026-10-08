@@ -15,9 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 #[macro_use]
 pub mod bit_util;
 mod bit_pack;
+#[cfg(feature = "std")]
 pub(crate) mod interner;
 
 pub mod push_buffers;
@@ -29,3 +39,30 @@ pub mod utf8;
 pub use self::test_common::page_util::{
     DataPageBuilder, DataPageBuilderImpl, InMemoryPageIterator,
 };
+
+/// The largest decimal precision `bits` bits of two's-complement magnitude hold,
+/// that is `floor(log10(2^(bits - 1) - 1))`.
+///
+/// A `no_std` build has no `f64::powi`/`log10`, and beyond 128 bits no integer
+/// type holds the intermediate either, so the decimal digits of `2^(bits - 1)`
+/// are carried directly. `2^k` ends in 2, 4, 6 or 8 for every `k >= 1`, so
+/// subtracting the one keeps every digit and the count is the same.
+pub(crate) fn max_precision_for_bits(bits: i32) -> u32 {
+    if bits < 2 {
+        return 0;
+    }
+    // Decimal digits of the running power of two, least significant first.
+    let mut digits = alloc::vec![1_u8];
+    for _ in 1..bits {
+        let mut carry = 0_u8;
+        for digit in digits.iter_mut() {
+            let doubled = *digit * 2 + carry;
+            *digit = doubled % 10;
+            carry = doubled / 10;
+        }
+        if carry != 0 {
+            digits.push(carry);
+        }
+    }
+    digits.len() as u32 - 1
+}

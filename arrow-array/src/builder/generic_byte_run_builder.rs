@@ -16,7 +16,8 @@
 // under the License.
 
 use crate::types::bytes::ByteArrayNativeType;
-use std::{any::Any, sync::Arc};
+use alloc::sync::Arc;
+use core::any::Any;
 
 use crate::{
     ArrayRef, ArrowPrimitiveType, RunArray,
@@ -25,6 +26,8 @@ use crate::{
 
 use super::{ArrayBuilder, GenericByteBuilder, PrimitiveBuilder};
 
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 use arrow_buffer::ArrowNativeType;
 
 /// Builder for [`RunArray`] of [`GenericByteArray`](crate::array::GenericByteArray)

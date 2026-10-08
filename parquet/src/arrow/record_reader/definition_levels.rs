@@ -15,6 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use arrow_array::builder::BooleanBufferBuilder;
 use arrow_buffer::Buffer;
 use arrow_buffer::bit_chunk_iterator::UnalignedBitChunk;
@@ -85,7 +94,7 @@ impl DefinitionLevelBuffer {
     /// Returns the built level data
     pub fn consume_levels(&mut self) -> Option<Vec<i16>> {
         match &mut self.inner {
-            BufferInner::Full { levels, .. } => Some(std::mem::take(levels)),
+            BufferInner::Full { levels, .. } => Some(core::mem::take(levels)),
             BufferInner::Mask { .. } => None,
         }
     }

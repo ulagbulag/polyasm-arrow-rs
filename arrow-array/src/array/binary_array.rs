@@ -17,6 +17,7 @@
 
 use crate::types::{ByteArrayType, GenericBinaryType};
 use crate::{Array, GenericByteArray, GenericListArray, GenericStringArray, OffsetSizeTrait};
+use alloc::vec::Vec;
 use arrow_data::ArrayData;
 use arrow_schema::DataType;
 
@@ -213,9 +214,9 @@ pub type LargeBinaryArray = GenericBinaryArray<i64>;
 mod tests {
     use super::*;
     use crate::{ListArray, StringArray};
+    use alloc::sync::Arc;
     use arrow_buffer::Buffer;
     use arrow_schema::Field;
-    use std::sync::Arc;
 
     #[test]
     fn test_binary_array() {

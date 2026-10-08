@@ -15,6 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use bytes::Bytes;
 
 use crate::basic::Encoding;
@@ -25,9 +34,9 @@ use crate::encodings::encoding::{Encoder, get_encoder};
 use crate::encodings::levels::LevelEncoder;
 use crate::errors::Result;
 use crate::schema::types::{ColumnDescPtr, ColumnDescriptor, ColumnPath, Type as SchemaType};
-use std::iter::Peekable;
-use std::mem;
-use std::sync::Arc;
+use alloc::sync::Arc;
+use core::iter::Peekable;
+use core::mem;
 
 pub trait DataPageBuilder {
     fn add_rep_levels(&mut self, max_level: i16, rep_levels: &[i16]);
@@ -75,8 +84,8 @@ impl DataPageBuilderImpl {
         if max_level <= 0 {
             return 0;
         }
-        let mut level_encoder = LevelEncoder::v1_streaming(max_level);
-        level_encoder.put_with_observer(levels, |_, _| {});
+        let mut level_encoder = LevelEncoder::v1(Encoding::RLE, max_level, levels.len());
+        level_encoder.put(levels);
         let encoded_levels = level_encoder.consume();
         // Actual encoded bytes (without length offset)
         let encoded_bytes = &encoded_levels[mem::size_of::<i32>()..];

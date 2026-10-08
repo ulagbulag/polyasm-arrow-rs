@@ -34,6 +34,15 @@
 //!
 //! [page index]: https://github.com/apache/parquet-format/blob/master/PageIndex.md
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use clap::Parser;
 use parquet::data_type::ByteArray;
 use parquet::errors::{ParquetError, Result};
@@ -137,7 +146,7 @@ fn compute_row_counts(offset_index: &[PageLocation], rows: i64) -> Vec<i64> {
 }
 
 /// Prints index information for a single column chunk
-fn print_index<T: std::fmt::Display>(
+fn print_index<T: core::fmt::Display>(
     column_index: &PrimitiveColumnIndex<T>,
     offset_index: &OffsetIndexMetaData,
     row_counts: &[i64],

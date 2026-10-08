@@ -15,13 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::arrow::array_reader::{ArrayReader, ListArrayReader};
 use crate::errors::Result;
+use alloc::sync::Arc;
 use arrow_array::cast::AsArray;
 use arrow_array::{Array, ArrayRef, GenericListViewArray, OffsetSizeTrait, new_empty_array};
 use arrow_schema::DataType as ArrowType;
-use std::any::Any;
-use std::sync::Arc;
+use core::any::Any;
 
 /// Implementation of list view array reader.
 /// This wraps a ListArrayReader and converts the result to ListViewArray.
@@ -106,8 +115,9 @@ impl<OffsetSize: OffsetSizeTrait> ArrayReader for ListViewArrayReader<OffsetSize
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arrow::array_reader::test_util::make_int32_page_reader;
+    use crate::arrow::array_reader::test_util::InMemoryArrayReader;
     use arrow::datatypes::Int32Type as ArrowInt32;
+    use arrow_array::PrimitiveArray;
 
     fn test_nullable_list_view<OffsetSize: OffsetSizeTrait>() {
         // [[1, null, 2], null, [], [3, 4], [], [], null, [], [null, 1]]
@@ -124,12 +134,27 @@ mod tests {
                 Some(vec![None, Some(1)]),
             ]);
 
-        let item_array_reader = make_int32_page_reader(
-            &[1, 2, 3, 4, 1],
-            &[3, 2, 3, 0, 1, 3, 3, 1, 1, 0, 1, 2, 3],
-            &[0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
-            3,
-            1,
+        let array = Arc::new(PrimitiveArray::<ArrowInt32>::from(vec![
+            Some(1),
+            None,
+            Some(2),
+            None,
+            None,
+            Some(3),
+            Some(4),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(1),
+        ]));
+
+        let item_array_reader = InMemoryArrayReader::new(
+            ArrowType::Int32,
+            array,
+            Some(vec![3, 2, 3, 0, 1, 3, 3, 1, 1, 0, 1, 2, 3]),
+            Some(vec![0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1]),
         );
 
         let field = Arc::new(arrow_schema::Field::new_list_field(ArrowType::Int32, true));
@@ -139,8 +164,13 @@ mod tests {
             ArrowType::ListView(field)
         };
 
-        let mut list_view_array_reader =
-            ListViewArrayReader::<OffsetSize>::new(item_array_reader, data_type, 2, 1, true);
+        let mut list_view_array_reader = ListViewArrayReader::<OffsetSize>::new(
+            Box::new(item_array_reader),
+            data_type,
+            2,
+            1,
+            true,
+        );
 
         let actual = list_view_array_reader.next_batch(1024).unwrap();
         let actual = actual
@@ -163,12 +193,24 @@ mod tests {
                 Some(vec![None, Some(1)]),
             ]);
 
-        let item_array_reader = make_int32_page_reader(
-            &[1, 2, 3, 4, 1],
-            &[2, 1, 2, 0, 2, 2, 0, 0, 1, 2],
-            &[0, 1, 1, 0, 0, 1, 0, 0, 0, 1],
-            2,
-            1,
+        let array = Arc::new(PrimitiveArray::<ArrowInt32>::from(vec![
+            Some(1),
+            None,
+            Some(2),
+            None,
+            Some(3),
+            Some(4),
+            None,
+            None,
+            None,
+            Some(1),
+        ]));
+
+        let item_array_reader = InMemoryArrayReader::new(
+            ArrowType::Int32,
+            array,
+            Some(vec![2, 1, 2, 0, 2, 2, 0, 0, 1, 2]),
+            Some(vec![0, 1, 1, 0, 0, 1, 0, 0, 0, 1]),
         );
 
         let field = Arc::new(arrow_schema::Field::new_list_field(ArrowType::Int32, true));
@@ -178,8 +220,13 @@ mod tests {
             ArrowType::ListView(field)
         };
 
-        let mut list_view_array_reader =
-            ListViewArrayReader::<OffsetSize>::new(item_array_reader, data_type, 1, 1, false);
+        let mut list_view_array_reader = ListViewArrayReader::<OffsetSize>::new(
+            Box::new(item_array_reader),
+            data_type,
+            1,
+            1,
+            false,
+        );
 
         let actual = list_view_array_reader.next_batch(1024).unwrap();
         let actual = actual

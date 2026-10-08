@@ -17,7 +17,16 @@
 
 //! Contains all supported encoders for Parquet.
 
-use std::{cmp, marker::PhantomData};
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+use core::{cmp, marker::PhantomData};
 
 use crate::basic::*;
 use crate::data_type::private::ParquetValueType;
@@ -161,7 +170,7 @@ impl<T: DataType> Encoder<T> for PlainEncoder<T> {
         self.buffer
             .extend_from_slice(self.bit_writer.flush_buffer());
         self.bit_writer.clear();
-        Ok(std::mem::take(&mut self.buffer).into())
+        Ok(core::mem::take(&mut self.buffer).into())
     }
 
     #[inline]
@@ -172,7 +181,8 @@ impl<T: DataType> Encoder<T> for PlainEncoder<T> {
 
     /// Return the estimated memory size of this encoder.
     fn estimated_memory_size(&self) -> usize {
-        self.buffer.capacity() * std::mem::size_of::<u8>() + self.bit_writer.estimated_memory_size()
+        self.buffer.capacity() * core::mem::size_of::<u8>()
+            + self.bit_writer.estimated_memory_size()
     }
 }
 
@@ -505,8 +515,8 @@ impl<T: DataType> Encoder<T> for DeltaBitPackEncoder<T> {
     fn estimated_memory_size(&self) -> usize {
         self.page_header_writer.estimated_memory_size()
             + self.bit_writer.estimated_memory_size()
-            + self.deltas.capacity() * std::mem::size_of::<i64>()
-            + std::mem::size_of::<Self>()
+            + self.deltas.capacity() * core::mem::size_of::<i64>()
+            + core::mem::size_of::<Self>()
     }
 }
 
@@ -646,7 +656,7 @@ impl<T: DataType> Encoder<T> for DeltaLengthByteArrayEncoder<T> {
 
     /// return the estimated memory size of this encoder.
     fn estimated_memory_size(&self) -> usize {
-        self.len_encoder.estimated_memory_size() + self.data.len() + std::mem::size_of::<Self>()
+        self.len_encoder.estimated_memory_size() + self.data.len() + core::mem::size_of::<Self>()
     }
 }
 
@@ -756,7 +766,7 @@ impl<T: DataType> Encoder<T> for DeltaByteArrayEncoder<T> {
     fn estimated_memory_size(&self) -> usize {
         self.prefix_len_encoder.estimated_memory_size()
             + self.suffix_writer.estimated_memory_size()
-            + (self.previous.capacity() * std::mem::size_of::<u8>())
+            + (self.previous.capacity() * core::mem::size_of::<u8>())
     }
 }
 
@@ -764,7 +774,7 @@ impl<T: DataType> Encoder<T> for DeltaByteArrayEncoder<T> {
 mod tests {
     use super::*;
 
-    use std::sync::Arc;
+    use alloc::sync::Arc;
 
     use crate::encodings::decoding::{Decoder, DictDecoder, PlainDecoder, get_decoder};
     use crate::schema::types::{ColumnDescPtr, ColumnDescriptor, ColumnPath, Type as SchemaType};

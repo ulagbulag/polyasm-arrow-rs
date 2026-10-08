@@ -15,14 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::arrow::array_reader::ArrayReader;
+use crate::collections::HashMap;
 use crate::errors::{ParquetError, Result};
 use crate::file::metadata::{ParquetMetaData, RowGroupMetaData};
+use alloc::sync::Arc;
 use arrow_array::{ArrayRef, Int64Array};
 use arrow_schema::DataType;
-use std::any::Any;
-use std::collections::HashMap;
-use std::sync::Arc;
+use core::any::Any;
 
 pub(crate) struct RowGroupIndexReader {
     buffered_indices: Vec<i64>,
@@ -37,7 +46,7 @@ enum ReaderState {
     },
     // general path: multiple row groups with iterator
     MultipleRowGroups {
-        remaining_indices: std::iter::Flatten<std::vec::IntoIter<std::iter::RepeatN<i64>>>,
+        remaining_indices: core::iter::Flatten<alloc::vec::IntoIter<core::iter::RepeatN<i64>>>,
     },
 }
 
@@ -118,7 +127,7 @@ impl RowGroupIndexReader {
                 })?;
 
                 // repeat row group index for each row in this row group
-                Ok(std::iter::repeat_n(
+                Ok(core::iter::repeat_n(
                     *row_group_index,
                     rg.num_rows() as usize,
                 ))
@@ -201,7 +210,7 @@ mod tests {
         ColumnChunkMetaData, FileMetaData, ParquetMetaData, RowGroupMetaData,
     };
     use crate::schema::types::{SchemaDescriptor, Type as SchemaType};
-    use std::sync::Arc;
+    use alloc::sync::Arc;
 
     fn create_test_schema() -> Arc<SchemaDescriptor> {
         let schema = SchemaType::group_type_builder("schema")

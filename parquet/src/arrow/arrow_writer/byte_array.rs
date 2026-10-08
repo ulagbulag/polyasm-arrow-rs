@@ -15,11 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::basic::Encoding;
 use crate::bloom_filter::Sbbf;
-use crate::column::writer::encoder::{
-    ColumnValueEncoder, DataPageValues, DictionaryPage, create_bloom_filter,
-};
+use crate::column::writer::encoder::{ColumnValueEncoder, DataPageValues, DictionaryPage};
 use crate::data_type::{AsBytes, ByteArray, Int32Type};
 use crate::encodings::encoding::{DeltaBitPackEncoder, Encoder};
 use crate::encodings::rle::RleEncoder;
@@ -251,7 +258,7 @@ impl FallbackEncoder {
         max_value: Option<ByteArray>,
     ) -> Result<DataPageValues<ByteArray>> {
         let (buf, encoding) = match &mut self.encoder {
-            FallbackEncoderImpl::Plain { buffer } => (std::mem::take(buffer), Encoding::PLAIN),
+            FallbackEncoderImpl::Plain { buffer } => (core::mem::take(buffer), Encoding::PLAIN),
             FallbackEncoderImpl::DeltaLength { buffer, lengths } => {
                 let lengths = lengths.flush_buffer()?;
 
@@ -287,7 +294,7 @@ impl FallbackEncoder {
 
         Ok(DataPageValues {
             buf: buf.into(),
-            num_values: std::mem::take(&mut self.num_values),
+            num_values: core::mem::take(&mut self.num_values),
             encoding,
             min_value,
             max_value,
@@ -302,7 +309,7 @@ struct ByteArrayStorage {
     /// Encoded dictionary data
     page: Vec<u8>,
 
-    values: Vec<std::ops::Range<usize>>,
+    values: Vec<core::ops::Range<usize>>,
 }
 
 impl Storage for ByteArrayStorage {
@@ -328,8 +335,8 @@ impl Storage for ByteArrayStorage {
 
     #[allow(dead_code)] // not used in parquet_derive, so is dead there
     fn estimated_memory_size(&self) -> usize {
-        self.page.capacity() * std::mem::size_of::<u8>()
-            + self.values.capacity() * std::mem::size_of::<std::ops::Range<usize>>()
+        self.page.capacity() * core::mem::size_of::<u8>()
+            + self.values.capacity() * core::mem::size_of::<core::ops::Range<usize>>()
     }
 }
 
@@ -364,7 +371,8 @@ impl DictEncoder {
     }
 
     fn estimated_memory_size(&self) -> usize {
-        self.interner.estimated_memory_size() + self.indices.capacity() * std::mem::size_of::<u64>()
+        self.interner.estimated_memory_size()
+            + self.indices.capacity() * core::mem::size_of::<u64>()
     }
 
     fn estimated_data_page_size(&self) -> usize {
@@ -425,7 +433,6 @@ pub struct ByteArrayEncoder {
     min_value: Option<ByteArray>,
     max_value: Option<ByteArray>,
     bloom_filter: Option<Sbbf>,
-    bloom_filter_target_fpp: f64,
     geo_stats_accumulator: Option<Box<dyn GeoStatsAccumulator>>,
 }
 
@@ -433,9 +440,7 @@ impl ColumnValueEncoder for ByteArrayEncoder {
     type T = ByteArray;
     type Values = dyn Array;
     fn flush_bloom_filter(&mut self) -> Option<Sbbf> {
-        let mut sbbf = self.bloom_filter.take()?;
-        sbbf.fold_to_target_fpp(self.bloom_filter_target_fpp);
-        Some(sbbf)
+        self.bloom_filter.take()
     }
 
     fn try_new(descr: &ColumnDescPtr, props: &WriterProperties) -> Result<Self>
@@ -448,7 +453,10 @@ impl ColumnValueEncoder for ByteArrayEncoder {
 
         let fallback = FallbackEncoder::new(descr, props)?;
 
-        let (bloom_filter, bloom_filter_target_fpp) = create_bloom_filter(props, descr)?;
+        let bloom_filter = props
+            .bloom_filter_properties(descr.path())
+            .map(|props| Sbbf::new_with_ndv_fpp(props.ndv, props.fpp))
+            .transpose()?;
 
         let statistics_enabled = props.statistics_enabled(descr.path());
 
@@ -458,7 +466,6 @@ impl ColumnValueEncoder for ByteArrayEncoder {
             fallback,
             statistics_enabled,
             bloom_filter,
-            bloom_filter_target_fpp,
             dict_encoder: dictionary,
             min_value: None,
             max_value: None,

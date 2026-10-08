@@ -19,7 +19,16 @@
 
 /// Notice that all the corresponding tests are in
 /// `arrow-rs/parquet/tests/arrow_reader/statistics.rs`.
-use crate::arrow::buffer::bit_util::sign_extend_be;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+use crate::arrow::buffer::bit_util::{sign_extend_be, u128_from_be_bytes};
 use crate::arrow::parquet_column;
 use crate::basic::Type as PhysicalType;
 use crate::errors::{ParquetError, Result};
@@ -27,6 +36,7 @@ use crate::file::metadata::{ParquetColumnIndex, ParquetOffsetIndex, RowGroupMeta
 use crate::file::page_index::column_index::ColumnIndexMetaData;
 use crate::file::statistics::Statistics as ParquetStatistics;
 use crate::schema::types::SchemaDescriptor;
+use alloc::sync::Arc;
 use arrow_array::builder::{
     BinaryBuilder, BinaryViewBuilder, BooleanBuilder, Date32Builder, Date64Builder,
     Decimal32Builder, Decimal64Builder, FixedSizeBinaryBuilder, Float16Builder, Float32Builder,
@@ -48,7 +58,6 @@ use arrow_buffer::{NullBufferBuilder, i256};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use half::f16;
 use paste::paste;
-use std::sync::Arc;
 
 // Convert the bytes array to i32.
 // The endian of the input bytes array must be big-endian.
@@ -56,19 +65,19 @@ pub(crate) fn from_bytes_to_i32(b: &[u8]) -> i32 {
     // The bytes array are from parquet file and must be the big-endian.
     // The endian is defined by parquet format, and the reference document
     // https://github.com/apache/parquet-format/blob/54e53e5d7794d383529dd30746378f19a12afd58/src/main/thrift/parquet.thrift#L66
-    i32::from_be_bytes(sign_extend_be::<4>(b))
+    u128_from_be_bytes(&sign_extend_be::<4>(b)) as i32
 }
 
 // Convert the bytes array to i64.
 // The endian of the input bytes array must be big-endian.
 pub(crate) fn from_bytes_to_i64(b: &[u8]) -> i64 {
-    i64::from_be_bytes(sign_extend_be::<8>(b))
+    u128_from_be_bytes(&sign_extend_be::<8>(b)) as i64
 }
 
 // Convert the bytes array to i128.
 // The endian of the input bytes array must be big-endian.
 pub(crate) fn from_bytes_to_i128(b: &[u8]) -> i128 {
-    i128::from_be_bytes(sign_extend_be::<16>(b))
+    u128_from_be_bytes(&sign_extend_be::<16>(b)) as i128
 }
 
 // Convert the bytes array to i256.
@@ -475,7 +484,7 @@ macro_rules! get_statistics {
                         continue;
                     };
 
-                    let Ok(x) = std::str::from_utf8(x) else {
+                    let Ok(x) = core::str::from_utf8(x) else {
                         builder.append_null();
                         continue;
                     };
@@ -493,7 +502,7 @@ macro_rules! get_statistics {
                         continue;
                     };
 
-                    let Ok(x) = std::str::from_utf8(x) else {
+                    let Ok(x) = core::str::from_utf8(x) else {
                         builder.append_null();
                         continue;
                     };
@@ -557,7 +566,7 @@ macro_rules! get_statistics {
                         continue;
                     };
 
-                    let Ok(x) = std::str::from_utf8(x) else {
+                    let Ok(x) = core::str::from_utf8(x) else {
                         builder.append_null();
                         continue;
                     };
@@ -821,7 +830,7 @@ macro_rules! get_data_page_statistics {
                             ColumnIndexMetaData::BYTE_ARRAY(index) => {
                                 for val in index.[<$stat_type_prefix:lower _values_iter>]() {
                                     match val {
-                                        Some(x) => match std::str::from_utf8(x.as_ref()) {
+                                        Some(x) => match core::str::from_utf8(x.as_ref()) {
                                             Ok(s) => b.append_value(s),
                                             _ => b.append_null(),
                                         }
@@ -841,7 +850,7 @@ macro_rules! get_data_page_statistics {
                             ColumnIndexMetaData::BYTE_ARRAY(index) => {
                                 for val in index.[<$stat_type_prefix:lower _values_iter>]() {
                                     match val {
-                                        Some(x) => match std::str::from_utf8(x.as_ref()) {
+                                        Some(x) => match core::str::from_utf8(x.as_ref()) {
                                             Ok(s) => b.append_value(s),
                                             _ => b.append_null(),
                                         }
@@ -1202,7 +1211,7 @@ macro_rules! get_data_page_statistics {
                             ColumnIndexMetaData::BYTE_ARRAY(index) => {
                                 for val in index.[<$stat_type_prefix:lower _values_iter>]() {
                                     match val {
-                                        Some(x) => match std::str::from_utf8(x.as_ref()) {
+                                        Some(x) => match core::str::from_utf8(x.as_ref()) {
                                             Ok(s) => b.append_value(s),
                                             _ => b.append_null(),
                                         }
@@ -1582,7 +1591,7 @@ impl<'a> StatisticsConverter<'a> {
     {
         let Some(parquet_index) = self.parquet_column_index else {
             let num_row_groups = metadatas.into_iter().count();
-            return Ok(BooleanArray::from_iter(std::iter::repeat_n(
+            return Ok(BooleanArray::from_iter(core::iter::repeat_n(
                 None,
                 num_row_groups,
             )));
@@ -1604,7 +1613,7 @@ impl<'a> StatisticsConverter<'a> {
     {
         let Some(parquet_index) = self.parquet_column_index else {
             let num_row_groups = metadatas.into_iter().count();
-            return Ok(BooleanArray::from_iter(std::iter::repeat_n(
+            return Ok(BooleanArray::from_iter(core::iter::repeat_n(
                 None,
                 num_row_groups,
             )));
@@ -1626,7 +1635,7 @@ impl<'a> StatisticsConverter<'a> {
     {
         let Some(parquet_index) = self.parquet_column_index else {
             let num_row_groups = metadatas.into_iter().count();
-            return Ok(UInt64Array::from_iter(std::iter::repeat_n(
+            return Ok(UInt64Array::from_iter(core::iter::repeat_n(
                 None,
                 num_row_groups,
             )));
@@ -1830,7 +1839,7 @@ impl<'a> StatisticsConverter<'a> {
 
             // append the last page row count
             let num_rows_in_row_group = &row_group_metadatas[*rg_idx].num_rows();
-            let row_count_per_page = row_count_per_page.chain(std::iter::once(Some(
+            let row_count_per_page = row_count_per_page.chain(core::iter::once(Some(
                 *num_rows_in_row_group as u64
                     - page_locations.last().unwrap().first_row_index as u64,
             )));

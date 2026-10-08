@@ -15,9 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+use alloc::sync::Arc;
 use bytes::Bytes;
 use futures::future::BoxFuture;
-use std::sync::Arc;
 
 use crate::arrow::async_writer::AsyncFileWriter;
 use crate::errors::{ParquetError, Result};
@@ -118,9 +127,9 @@ impl From<BufWriter> for ParquetObjectWriter {
 }
 #[cfg(test)]
 mod tests {
+    use alloc::sync::Arc;
     use arrow_array::{ArrayRef, Int64Array, RecordBatch};
     use object_store::memory::InMemory;
-    use std::sync::Arc;
 
     use super::*;
     use crate::arrow::AsyncArrowWriter;

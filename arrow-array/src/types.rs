@@ -23,6 +23,9 @@ use crate::delta::{
 use crate::temporal_conversions::as_datetime_with_timezone;
 use crate::timezone::Tz;
 use crate::{ArrowNativeTypeOp, OffsetSizeTrait};
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 use arrow_buffer::{Buffer, OffsetBuffer, i256};
 use arrow_data::decimal::{
     format_decimal_str, is_validate_decimal_precision, is_validate_decimal32_precision,
@@ -37,10 +40,10 @@ use arrow_schema::{
     DataType, IntervalUnit, TimeUnit,
 };
 use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, TimeZone};
+use core::fmt::Debug;
+use core::marker::PhantomData;
+use core::ops::Sub;
 use half::f16;
-use std::fmt::Debug;
-use std::marker::PhantomData;
-use std::ops::Sub;
 
 // re-export types so that they can be used without importing arrow_buffer explicitly
 pub use arrow_buffer::{IntervalDayTime, IntervalMonthDayNano};
@@ -1723,7 +1726,7 @@ pub(crate) mod bytes {
     impl<O: OffsetSizeTrait> ByteArrayTypeSealed for GenericStringType<O> {}
     impl<O: OffsetSizeTrait> ByteArrayTypeSealed for GenericBinaryType<O> {}
 
-    pub trait ByteArrayNativeType: std::fmt::Debug + Send + Sync {
+    pub trait ByteArrayNativeType: core::fmt::Debug + Send + Sync {
         fn from_bytes_checked(b: &[u8]) -> Option<&Self>;
 
         /// # Safety
@@ -1747,12 +1750,12 @@ pub(crate) mod bytes {
     impl ByteArrayNativeType for str {
         #[inline]
         fn from_bytes_checked(b: &[u8]) -> Option<&Self> {
-            std::str::from_utf8(b).ok()
+            core::str::from_utf8(b).ok()
         }
 
         #[inline]
         unsafe fn from_bytes_unchecked(b: &[u8]) -> &Self {
-            unsafe { std::str::from_utf8_unchecked(b) }
+            unsafe { core::str::from_utf8_unchecked(b) }
         }
     }
 }
@@ -1796,7 +1799,7 @@ impl<O: OffsetSizeTrait> ByteArrayType for GenericStringType<O> {
 
     fn validate(offsets: &OffsetBuffer<Self::Offset>, values: &Buffer) -> Result<(), ArrowError> {
         // Verify that the slice as a whole is valid UTF-8
-        let validated = std::str::from_utf8(values).map_err(|e| {
+        let validated = core::str::from_utf8(values).map_err(|e| {
             ArrowError::InvalidArgumentError(format!("Encountered non UTF-8 data: {e}"))
         })?;
 
@@ -1975,8 +1978,8 @@ mod tests {
         assert_eq!(
             spec,
             &BufferSpec::FixedWidth {
-                byte_width: std::mem::size_of::<T::Native>(),
-                alignment: std::mem::align_of::<T::Native>(),
+                byte_width: core::mem::size_of::<T::Native>(),
+                alignment: core::mem::align_of::<T::Native>(),
             }
         );
     }

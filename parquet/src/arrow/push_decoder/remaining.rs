@@ -15,15 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::DecodeResult;
 use crate::arrow::arrow_reader::{ParquetRecordBatchReader, RowSelection};
 use crate::arrow::push_decoder::reader_builder::RowGroupReaderBuilder;
 use crate::errors::ParquetError;
 use crate::file::metadata::ParquetMetaData;
+use alloc::collections::VecDeque;
+use alloc::sync::Arc;
 use bytes::Bytes;
-use std::collections::VecDeque;
-use std::ops::Range;
-use std::sync::Arc;
+use core::ops::Range;
 
 /// State machine that tracks the remaining high level chunks (row groups) of
 /// Parquet data are left to read.
@@ -68,11 +77,6 @@ impl RemainingRowGroups {
     /// Return the total number of bytes buffered so far
     pub fn buffered_bytes(&self) -> u64 {
         self.row_group_reader_builder.buffered_bytes()
-    }
-
-    /// Clear any staged ranges currently buffered for future decode work
-    pub fn clear_all_ranges(&mut self) {
-        self.row_group_reader_builder.clear_all_ranges();
     }
 
     /// returns [`ParquetRecordBatchReader`] suitable for reading the next

@@ -200,10 +200,10 @@ pub type GenericListViewArrayIter<'a, O> = ArrayIter<&'a GenericListViewArray<O>
 mod tests {
     use crate::array::{ArrayRef, BinaryArray, BooleanArray, Int32Array, StringArray};
     use crate::iterator::ArrayIter;
+    use alloc::sync::Arc;
+    use core::fmt::Debug;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
-    use std::fmt::Debug;
-    use std::sync::Arc;
 
     #[test]
     fn test_primitive_array_iter_round_trip() {

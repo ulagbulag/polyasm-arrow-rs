@@ -15,6 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::file::metadata::thrift::FileMeta;
 use crate::file::metadata::{
     ColumnChunkMetaData, ParquetColumnIndex, ParquetOffsetIndex, RowGroupMetaData,
@@ -35,6 +44,7 @@ use crate::{
 };
 use crate::{errors::Result, file::page_index::column_index::ColumnIndexMetaData};
 
+use crate::io::Write;
 use crate::{
     file::writer::{TrackedWrite, get_file_magic},
     parquet_thrift::WriteThrift,
@@ -46,8 +56,7 @@ use crate::{
     },
     parquet_thrift::ThriftCompactOutputProtocol,
 };
-use std::io::Write;
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 /// Writes `crate::file::metadata` structures to a thrift encoded byte stream
 ///
@@ -136,7 +145,7 @@ impl<'a, W: Write> ThriftMetadataWriter<'a, W> {
 
     /// Serialize the column indexes and transform to `Option<ParquetColumnIndex>`
     fn finalize_column_indexes(&mut self) -> Result<Option<ParquetColumnIndex>> {
-        let column_indexes = std::mem::take(&mut self.column_indexes);
+        let column_indexes = core::mem::take(&mut self.column_indexes);
 
         // Write column indexes to file
         if let Some(column_indexes) = column_indexes.as_ref() {
@@ -169,7 +178,7 @@ impl<'a, W: Write> ThriftMetadataWriter<'a, W> {
 
     /// Serialize the offset indexes and transform to `Option<ParquetOffsetIndex>`
     fn finalize_offset_indexes(&mut self) -> Result<Option<ParquetOffsetIndex>> {
-        let offset_indexes = std::mem::take(&mut self.offset_indexes);
+        let offset_indexes = core::mem::take(&mut self.offset_indexes);
 
         // Write offset indexes to file
         if let Some(offset_indexes) = offset_indexes.as_ref() {

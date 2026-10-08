@@ -15,6 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::basic::{Encoding, Type};
 use crate::data_type::{AsBytes, DataType, SliceAsBytes};
 
@@ -23,8 +32,8 @@ use crate::errors::{ParquetError, Result};
 use super::Encoder;
 
 use bytes::{BufMut, Bytes};
-use std::cmp;
-use std::marker::PhantomData;
+use core::cmp;
+use core::marker::PhantomData;
 
 pub struct ByteStreamSplitEncoder<T> {
     buffer: Vec<u8>,
@@ -108,7 +117,7 @@ impl<T: DataType> Encoder<T> for ByteStreamSplitEncoder<T> {
 
     /// return the estimated memory size of this encoder.
     fn estimated_memory_size(&self) -> usize {
-        self.buffer.capacity() * std::mem::size_of::<u8>()
+        self.buffer.capacity() * core::mem::size_of::<u8>()
     }
 }
 
@@ -226,6 +235,6 @@ impl<T: DataType> Encoder<T> for VariableWidthByteStreamSplitEncoder<T> {
 
     /// return the estimated memory size of this encoder.
     fn estimated_memory_size(&self) -> usize {
-        self.buffer.capacity() * std::mem::size_of::<u8>()
+        self.buffer.capacity() * core::mem::size_of::<u8>()
     }
 }

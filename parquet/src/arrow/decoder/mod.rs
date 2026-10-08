@@ -17,6 +17,15 @@
 
 //! Specialized decoders optimised for decoding to arrow format
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 mod delta_byte_array;
 mod dictionary_index;
 

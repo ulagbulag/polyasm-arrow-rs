@@ -17,12 +17,15 @@
 
 use crate::builder::{ArrayBuilder, BooleanBufferBuilder};
 use crate::{Array, ArrayRef, BooleanArray};
+use alloc::boxed::Box;
+use alloc::string::ToString;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use arrow_buffer::Buffer;
 use arrow_buffer::NullBufferBuilder;
 use arrow_data::ArrayData;
 use arrow_schema::{ArrowError, DataType};
-use std::any::Any;
-use std::sync::Arc;
+use core::any::Any;
 
 /// Builder for [`BooleanArray`]
 ///

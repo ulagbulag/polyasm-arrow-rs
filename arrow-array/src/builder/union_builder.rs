@@ -18,13 +18,17 @@
 use crate::builder::buffer_builder::{Int8BufferBuilder, Int32BufferBuilder};
 use crate::builder::{ArrayBuilder, BufferBuilder};
 use crate::{ArrayRef, ArrowPrimitiveType, UnionArray, make_array};
+use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use arrow_buffer::NullBufferBuilder;
 use arrow_buffer::{ArrowNativeType, Buffer, ScalarBuffer};
 use arrow_data::ArrayDataBuilder;
 use arrow_schema::{ArrowError, DataType, Field};
-use std::any::Any;
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use core::any::Any;
 
 /// `FieldData` is a helper struct to track the state of the fields in the `UnionBuilder`.
 #[derive(Debug)]
@@ -42,7 +46,7 @@ struct FieldData {
 }
 
 /// A type-erased [`BufferBuilder`] used by [`FieldData`]
-trait FieldDataValues: std::fmt::Debug + Send + Sync {
+trait FieldDataValues: core::fmt::Debug + Send + Sync {
     fn as_mut_any(&mut self) -> &mut dyn Any;
 
     fn append_null(&mut self);
@@ -368,7 +372,7 @@ impl ArrayBuilder for UnionBuilder {
     /// Builds the array
     fn finish(&mut self) -> ArrayRef {
         // Even simpler - just move the builder using mem::take and replace with default
-        let builder = std::mem::take(self);
+        let builder = core::mem::take(self);
 
         // Since UnionBuilder controls all invariants, this should never fail
         Arc::new(builder.build().unwrap())

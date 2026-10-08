@@ -15,9 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::alloc::{Layout, handle_alloc_error};
-use std::mem;
-use std::ptr::NonNull;
+use alloc_crate::alloc::handle_alloc_error;
+use alloc_crate::vec::Vec;
+use core::alloc::Layout;
+use core::mem;
+use core::ptr::NonNull;
 
 use crate::alloc::{ALIGNMENT, Deallocation};
 use crate::{
@@ -136,7 +138,7 @@ impl MutableBuffer {
             0 => dangling_ptr(),
             _ => {
                 // Safety: Verified size != 0
-                let raw_ptr = unsafe { std::alloc::alloc(layout) };
+                let raw_ptr = unsafe { alloc_crate::alloc::alloc(layout) };
                 NonNull::new(raw_ptr).unwrap_or_else(|| handle_alloc_error(layout))
             }
         };
@@ -170,7 +172,7 @@ impl MutableBuffer {
             0 => dangling_ptr(),
             _ => {
                 // Safety: Verified size != 0
-                let raw_ptr = unsafe { std::alloc::alloc_zeroed(layout) };
+                let raw_ptr = unsafe { alloc_crate::alloc::alloc_zeroed(layout) };
                 NonNull::new(raw_ptr).unwrap_or_else(|| handle_alloc_error(layout))
             }
         };
@@ -230,7 +232,7 @@ impl MutableBuffer {
         assert!(end <= self.layout.size());
         let v = if val { 255 } else { 0 };
         unsafe {
-            std::ptr::write_bytes(self.data.as_ptr(), v, end);
+            core::ptr::write_bytes(self.data.as_ptr(), v, end);
             self.len = end;
         }
         self
@@ -255,7 +257,7 @@ impl MutableBuffer {
 
         // Safety: `self.data[start..][..count]` is in-bounds and well-aligned for `u8`
         unsafe {
-            std::ptr::write_bytes(self.data.as_ptr().add(start), 0, count);
+            core::ptr::write_bytes(self.data.as_ptr().add(start), 0, count);
         }
     }
 
@@ -285,7 +287,7 @@ impl MutableBuffer {
             .expect("buffer length overflow");
         if required_cap > self.layout.size() {
             let new_capacity = bit_util::round_upto_multiple_of_64(required_cap);
-            let new_capacity = std::cmp::max(new_capacity, self.layout.size() * 2);
+            let new_capacity = core::cmp::max(new_capacity, self.layout.size() * 2);
             self.reallocate(new_capacity)
         }
     }
@@ -361,7 +363,7 @@ impl MutableBuffer {
                 let dst = self.data.as_ptr().add(self.len);
 
                 // SAFETY: the pointers are not overlapping as there is `number_of_bytes_to_copy` or less between them
-                std::ptr::copy_nonoverlapping(src, dst, number_of_bytes_to_copy)
+                core::ptr::copy_nonoverlapping(src, dst, number_of_bytes_to_copy)
             }
 
             // Advance the length by the amount of data we just copied (doubled)
@@ -377,7 +379,7 @@ impl MutableBuffer {
         if new_layout.size() == 0 {
             if self.layout.size() != 0 {
                 // Safety: data was allocated with layout
-                unsafe { std::alloc::dealloc(self.as_mut_ptr(), self.layout) };
+                unsafe { alloc_crate::alloc::dealloc(self.as_mut_ptr(), self.layout) };
                 self.layout = new_layout
             }
             return;
@@ -385,9 +387,9 @@ impl MutableBuffer {
 
         let data = match self.layout.size() {
             // Safety: new_layout is not empty
-            0 => unsafe { std::alloc::alloc(new_layout) },
+            0 => unsafe { alloc_crate::alloc::alloc(new_layout) },
             // Safety: verified new layout is valid and not empty
-            _ => unsafe { std::alloc::realloc(self.as_mut_ptr(), self.layout, capacity) },
+            _ => unsafe { alloc_crate::alloc::realloc(self.as_mut_ptr(), self.layout, capacity) },
         };
         self.data = NonNull::new(data).unwrap_or_else(|| handle_alloc_error(new_layout));
         self.layout = new_layout;
@@ -541,7 +543,7 @@ impl MutableBuffer {
             let reservation = self.reservation.lock().unwrap().take();
             *bytes.reservation.lock().unwrap() = reservation;
         }
-        std::mem::forget(self);
+        core::mem::forget(self);
         Buffer::from(bytes)
     }
 
@@ -598,7 +600,7 @@ impl MutableBuffer {
             // which is correct for all ArrowNativeType implementations.
             let src = items.as_ptr() as *const u8;
             let dst = self.data.as_ptr().add(self.len);
-            std::ptr::copy_nonoverlapping(src, dst, additional)
+            core::ptr::copy_nonoverlapping(src, dst, additional)
         }
         self.len += additional;
     }
@@ -618,12 +620,12 @@ impl MutableBuffer {
     /// reasons as [`MutableBuffer::reserve`].
     #[inline]
     pub fn push<T: ToByteSlice>(&mut self, item: T) {
-        let additional = std::mem::size_of::<T>();
+        let additional = core::mem::size_of::<T>();
         self.reserve(additional);
         unsafe {
             let src = item.to_byte_slice().as_ptr();
             let dst = self.data.as_ptr().add(self.len);
-            std::ptr::copy_nonoverlapping(src, dst, additional);
+            core::ptr::copy_nonoverlapping(src, dst, additional);
         }
         self.len += additional;
     }
@@ -633,10 +635,10 @@ impl MutableBuffer {
     /// Caller must ensure that the capacity()-len()>=`size_of<T>`()
     #[inline]
     pub unsafe fn push_unchecked<T: ToByteSlice>(&mut self, item: T) {
-        let additional = std::mem::size_of::<T>();
+        let additional = core::mem::size_of::<T>();
         let src = item.to_byte_slice().as_ptr();
         let dst = unsafe { self.data.as_ptr().add(self.len) };
-        unsafe { std::ptr::copy_nonoverlapping(src, dst, additional) };
+        unsafe { core::ptr::copy_nonoverlapping(src, dst, additional) };
         self.len += additional;
     }
 
@@ -860,7 +862,7 @@ pub(crate) fn dangling_ptr() -> NonNull<u8> {
     #[cfg(miri)]
     {
         // Since miri implies a nightly rust version we can use the unstable strict_provenance feature
-        unsafe { NonNull::new_unchecked(std::ptr::without_provenance_mut(ALIGNMENT)) }
+        unsafe { NonNull::new_unchecked(core::ptr::without_provenance_mut(ALIGNMENT)) }
     }
     #[cfg(not(miri))]
     {
@@ -903,7 +905,7 @@ impl MutableBuffer {
         &mut self,
         mut iterator: I,
     ) {
-        let item_size = std::mem::size_of::<T>();
+        let item_size = core::mem::size_of::<T>();
         let (lower, _) = iterator.size_hint();
         let additional = lower * item_size;
         self.reserve(additional);
@@ -917,7 +919,7 @@ impl MutableBuffer {
             if let Some(item) = iterator.next() {
                 unsafe {
                     let src = item.to_byte_slice().as_ptr();
-                    std::ptr::copy_nonoverlapping(src, dst, item_size);
+                    core::ptr::copy_nonoverlapping(src, dst, item_size);
                     dst = dst.add(item_size);
                 }
                 len.local_len += item_size;
@@ -958,7 +960,7 @@ impl MutableBuffer {
     pub unsafe fn from_trusted_len_iter<T: ArrowNativeType, I: Iterator<Item = T>>(
         iterator: I,
     ) -> Self {
-        let item_size = std::mem::size_of::<T>();
+        let item_size = core::mem::size_of::<T>();
         let (_, upper) = iterator.size_hint();
         let upper = upper.expect("from_trusted_len_iter requires an upper limit");
         let len = upper * item_size;
@@ -969,7 +971,7 @@ impl MutableBuffer {
         for item in iterator {
             // note how there is no reserve here (compared with `extend_from_iter`)
             let src = item.to_byte_slice().as_ptr();
-            unsafe { std::ptr::copy_nonoverlapping(src, dst, item_size) };
+            unsafe { core::ptr::copy_nonoverlapping(src, dst, item_size) };
             dst = unsafe { dst.add(item_size) };
         }
         assert_eq!(
@@ -1034,7 +1036,7 @@ impl MutableBuffer {
     >(
         iterator: I,
     ) -> Result<Self, E> {
-        let item_size = std::mem::size_of::<T>();
+        let item_size = core::mem::size_of::<T>();
         let (_, upper) = iterator.size_hint();
         let upper = upper.expect("try_from_trusted_len_iter requires an upper limit");
         let len = upper * item_size;
@@ -1046,7 +1048,7 @@ impl MutableBuffer {
             let item = item?;
             // note how there is no reserve here (compared with `extend_from_iter`)
             let src = item.to_byte_slice().as_ptr();
-            unsafe { std::ptr::copy_nonoverlapping(src, dst, item_size) };
+            unsafe { core::ptr::copy_nonoverlapping(src, dst, item_size) };
             dst = unsafe { dst.add(item_size) };
         }
         // try_from_trusted_len_iter is instantiated a lot, so we extract part of it into a less
@@ -1072,17 +1074,17 @@ impl Default for MutableBuffer {
     }
 }
 
-impl std::ops::Deref for MutableBuffer {
+impl core::ops::Deref for MutableBuffer {
     type Target = [u8];
 
     fn deref(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.as_ptr(), self.len) }
+        unsafe { core::slice::from_raw_parts(self.as_ptr(), self.len) }
     }
 }
 
-impl std::ops::DerefMut for MutableBuffer {
+impl core::ops::DerefMut for MutableBuffer {
     fn deref_mut(&mut self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.as_mut_ptr(), self.len) }
+        unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr(), self.len) }
     }
 }
 
@@ -1096,7 +1098,7 @@ impl Drop for MutableBuffer {
     fn drop(&mut self) {
         if self.layout.size() != 0 {
             // Safety: data was allocated with standard allocator with given layout
-            unsafe { std::alloc::dealloc(self.data.as_ptr() as _, self.layout) };
+            unsafe { alloc_crate::alloc::dealloc(self.data.as_ptr() as _, self.layout) };
         }
     }
 }
@@ -1139,7 +1141,7 @@ impl Drop for SetLenOnDrop<'_> {
 }
 
 /// Creating a `MutableBuffer` instance by setting bits according to the boolean values
-impl std::iter::FromIterator<bool> for MutableBuffer {
+impl core::iter::FromIterator<bool> for MutableBuffer {
     fn from_iter<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = bool>,
@@ -1193,7 +1195,7 @@ impl std::iter::FromIterator<bool> for MutableBuffer {
     }
 }
 
-impl<T: ArrowNativeType> std::iter::FromIterator<T> for MutableBuffer {
+impl<T: ArrowNativeType> core::iter::FromIterator<T> for MutableBuffer {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let mut buffer = Self::default();
         buffer.extend_from_iter(iter.into_iter());
@@ -1547,7 +1549,7 @@ mod tests {
     }
 
     // Helper to test a specific repeat count with various slice sizes
-    fn test_repeat_count<T: ArrowNativeType + PartialEq + std::fmt::Debug>(
+    fn test_repeat_count<T: ArrowNativeType + PartialEq + core::fmt::Debug>(
         repeat_count: usize,
         test_data: &[T],
     ) {
